@@ -9,6 +9,8 @@ import file_downloader
 
 
 proc main() {.async.} =
+  doAssert(existsFile("config.ini"), "Config file not found! Please rename config.example.ini and modify it.")
+  
   let config = loadConfig("config.ini")
 
   let 
