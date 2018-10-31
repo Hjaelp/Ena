@@ -9,6 +9,8 @@ Install [nim](https://nim-lang.org/install.html) first, then run: ```nim build e
 
 If you need PostgreSQL support instead of MySQL, run: ```nim build_postgres ena```
 
+```config.example.ini``` should then be renamed to ```config.ini``` and modified.
+
 
 ## Credits
 Andrey - for the *SQL schema, functions and triggers used in Fuuka.
