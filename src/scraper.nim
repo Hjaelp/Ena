@@ -120,7 +120,11 @@ proc create_sql_procedures*(self: Board) =
   create_procedures(self.name)
 
 proc media_file_exists(self: Board, hash: string): array[0..1, string] =
-  var row = db.getAllRows(sql(fmt"SELECT media, coalesce(preview_reply, preview_op, '') FROM {self.name}_images WHERE media_hash = ? limit 1"), hash)
+  when defined(USE_POSTGRES):
+    var row = db.getAllRows(sql(&"SELECT media, coalesce(preview_reply, preview_op, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
+  else:
+    var row = db.getAllRows(sql(fmt"SELECT media, coalesce(preview_reply, preview_op, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
+
   if row.len > 0:
     result = [row[0][0], row[0][1]]
   else:
