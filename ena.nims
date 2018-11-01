@@ -9,9 +9,13 @@ task build_postgres, "Building debug w/ PostgreSQL support":
   --d:ssl
   --o:Ena
   setCommand "c", "src/main.nim"
+  --o:stats
+  setCommand "c", "src/stats.nim"
   
 task build, "Building debug":
   --threads:on
   --d:ssl
   --o:Ena
   setCommand "c", "src/main.nim"
+  --o:stats
+  setCommand "c", "src/stats.nim"
