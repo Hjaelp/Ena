@@ -139,7 +139,7 @@ proc download_file(self: Board, post: Post) =
     if old_file[0] == "":
       file_channel.send((previewfilename: post.file.previewfilename, orig_filename: post.file.orig_filename, board: self.name, mode: self.file_options))
     else: 
-      info("Ignoring filename "&post.file.orig_filename&" because hash already exists.")
+      info(fmt"Ignoring filename post.file.orig_filename because hash already exists.")
       post.file.orig_filename = old_file[0]
       post.file.previewfilename = old_file[1]
 
@@ -242,7 +242,8 @@ proc scrape_thread(self: var Board, thread: var Topic) =
       self.enqueue_for_check(thread)
     return
   except:
-    error(fmt"scrape_thread(): Non-HTTP exception raised. Creating a new client in 5 seconds. Exception: {getCurrentExceptionMsg()}.")
+    let error = getCurrentExceptionMsg()
+    error(fmt"scrape_thread(): Non-HTTP exception raised. Creating a new client in 5 seconds. Exception: {error}.")
     sleep(5000)
     self.client.close()
     self.client = newHttpClient()
@@ -335,7 +336,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 proc scrape_archived_threads*(self: var Board) =
   info("Scraping the internal archives.")
   try:
-    var archive = parseJson(self.client.getContent("https://a.4cdn.org/"&self.name&"/archive.json"))
+    var archive = parseJson(self.client.getContent(fmt"https://a.4cdn.org/{self.name}/archive.json"))
     for thread in archive:
       let new_thread = Topic(num: thread.getInt(), posts: @[], last_modified: 0, queue_option: sEntire_Topic)
       self.enqueue_for_check(new_thread)
@@ -351,10 +352,10 @@ proc scrape*(self: var Board) =
 
   var live_threads: seq[int] = @[]
 
-  info("Scraping /"&self.name&"/.")
+  info(fmt"Scraping /{self.name}/.")
   var response: Response
   try:
-    response = self.client.request("https://a.4cdn.org/"&self.name&"/threads.json", httpMethod = HttpGET)
+    response = self.client.request(fmt"https://a.4cdn.org/{self.name}/threads.json", httpMethod = HttpGET)
     if response != nil and response.body != "":
       let catalog = parseJson(response.body)
       for page in catalog:
@@ -413,6 +414,9 @@ proc poll_queue*(self: var Board) =
     self.scrape()
 
 proc init*(self: var Board) =
+  self.create_board_table()
+  self.create_sql_procedures()
+
   if self.scrape_archive:
     self.scrape_archived_threads()
 

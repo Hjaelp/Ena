@@ -70,18 +70,15 @@ proc main() {.async.} =
   notice("Creating database tables and procedures.")
 
   let num_boards = boards.len-1
+
   for i, b in boards:
-    boards[i].create_board_table()
-    await sleepAsync(500)
-    boards[i].create_sql_procedures()
-    await sleepAsync(500)
     boards[i].init()
 
   notice("Done. Now scraping.")
 
   while true:
     for i in 0..num_boards:
-      poll_queue(boards[i])
+      boards[i].poll_queue()
       await sleepAsync(API_COOLDOWN)
 
 
