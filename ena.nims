@@ -4,18 +4,13 @@ description   = "Yet another imageboard dumper."
 license       = "MIT"
 
 task build_postgres, "Building debug w/ PostgreSQL support":
-  --define:USE_POSTGRES
-  --threads:on
-  --d:ssl
-  --o:Ena
-  setCommand "c", "src/main.nim"
-  --o:stats
-  setCommand "c", "src/stats.nim"
+  exec "nim c --d:ssl -d:release --threads:on --define:USE_POSTGRES --o:ena src/main.nim"
+  exec "nim c --d:ssl -d:release --threads:on --define:USE_POSTGRES --o:board_stats src/stats.nim"
+  setCommand "nop"
   
 task build, "Building debug":
   --threads:on
   --d:ssl
-  --o:Ena
-  setCommand "c", "src/main.nim"
-  --o:stats
-  setCommand "c", "src/stats.nim"
+  exec "nim c -d:ssl -d:release --threads:on --o:ena src/main.nim"
+  exec "nim c -d:ssl -d:release --threads:on --o:board_stats src/stats.nim"
+  setCommand "nop"
