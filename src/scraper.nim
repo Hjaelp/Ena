@@ -258,6 +258,11 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 
     var op_post: Post = newPost(posts[0], thread.num)
 
+    if op_post == nil:
+      error(fmt"OP post of {thread.num} from /{self.name}/ is nil. Adding back to the queue.")
+      self.enqueue_for_check(thread)
+      return
+
     if op_post.locked == 1 and archived_timestamp > 0:
       op_post.locked = 0
 
@@ -293,7 +298,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
   
     for i in 0..<posts.len:
       let post = newPost(posts[i], thread.num)
-      if post.num > 0:
+      if post != nil and post.num > 0:
         thread.posts.add(post.num)
         self.insert_post(post)
   
@@ -322,7 +327,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
       let post_num = post["no"].getInt()
       if not(post_num in old_posts):
         var postRef = newPost(post, thread.num)
-        if postRef.num > 0:
+        if postRef != nil and postRef.num > 0:
           self.insert_post(postRef)
           thread.posts.add(post_num)
           inc(new_posts)
