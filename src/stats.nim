@@ -35,7 +35,7 @@ for param in commandLineParams():
       BOARDS = value.split(';')
 
 if BOARDS == @[""]:
-  BOARDS = config.getSectionValue("Boards", "Boards_ton_archive").split(";")
+  BOARDS = config.getSectionValue("Boards", "Boards_to_archive").split(";")
 
 doAssert(BOARDS != @[""], "No boards to generate stats for.")
 
