@@ -3,14 +3,11 @@
 
 import db_mysql, strformat, strutils
 
-var db*: DbConn
+proc db_connect*(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME: string): DbConn =
+  result = open(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
+  discard result.setEncoding("utf8mb4")
 
-
-proc db_connect*(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME: string) =
-  db = open(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
-  discard db.setEncoding("utf8mb4")
-
-proc create_tables*(board_name: string) =
+proc create_tables*(board_name: string, db: DbConn) =
   db.exec(sql"START TRANSACTION")
   db.exec(sql(fmt"""CREATE TABLE IF NOT EXISTS `{board_name}` (
     `doc_id` int unsigned NOT NULL auto_increment,
@@ -126,7 +123,7 @@ proc create_tables*(board_name: string) =
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8"""))
   db.exec(sql"COMMIT")
 
-proc create_procedures*(board_name: string) =
+proc create_procedures*(board_name: string, db: DbConn) =
   db.exec(sql"START TRANSACTION")
 
   db.exec(sql(fmt"DROP PROCEDURE IF EXISTS `update_thread_{board_name}`"))

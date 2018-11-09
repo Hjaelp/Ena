@@ -39,14 +39,14 @@ if BOARDS == @[""]:
 
 doAssert(BOARDS != @[""], "No boards to generate stats for.")
 
-db_connect(DB_HOST,DB_USERNAME,DB_PASSWORD,DB_NAME)
-db.exec(sql"START TRANSACTION")
+var db = db_connect(DB_HOST,DB_USERNAME,DB_PASSWORD,DB_NAME)
 
 echo "Now starting stats generation."
 
 for board in BOARDS:
-  time("Table creation", board, board.create_tables())
+  time("Table creation", board, create_tables(board, db))
 
+  db.exec(sql"START TRANSACTION")
   when defined(USE_POSTGRES):
     time("Daily statistics", board, 
       db.exec(sql(fmt"""
@@ -131,4 +131,4 @@ for board in BOARDS:
       )
     )
 
-db.exec(sql"COMMIT")
+  db.exec(sql"COMMIT")

@@ -8,16 +8,14 @@ import strutils, sequtils, strformat, logging
 when defined(USE_POSTGRES):
   import db_postgres
   import db_pgsql_setup
-  export db_pgsql_setup.db_connect
+  export db_pgsql_setup.db_connect, db_postgres.DbConn, db_postgres.close
 else:
   import db_mysql
   import db_mysql_setup
-  export db_mysql_setup.db_connect
+  export db_mysql_setup.db_connect, db_mysql.DbConn, db_mysql.close
 
 import file_downloader
 import html_purifier
-
-var started = false
 
 type Scrape_options = enum 
     sEntire_Topic,
@@ -33,6 +31,7 @@ type
     scrape_archive*: bool
     threads*: Table[int, Topic]
     scrape_queue*: Deque[Topic]
+    db*: DbConn
 
   Topic* = ref object
     num*: int
@@ -114,16 +113,16 @@ proc newPost(jsonPost: JsonNode, thread_num: int): Post =
     )
 
 proc create_board_table*(self: Board) =
-  create_tables(self.name)
+  create_tables(self.name, self.db)
 
 proc create_sql_procedures*(self: Board) =
-  create_procedures(self.name)
+  create_procedures(self.name, self.db)
 
 proc media_file_exists(self: Board, hash: string): array[0..1, string] =
   when defined(USE_POSTGRES):
-    var row = db.getAllRows(sql(&"SELECT media, coalesce(preview_reply, preview_op, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
+    var row = self.db.getAllRows(sql(&"SELECT media, coalesce(preview_reply, preview_op, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
   else:
-    var row = db.getAllRows(sql(fmt"SELECT media, coalesce(preview_reply, preview_op, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
+    var row = self.db.getAllRows(sql(fmt"SELECT media, coalesce(preview_reply, preview_op, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
 
   if row.len > 0:
     result = [row[0][0], row[0][1]]
@@ -139,7 +138,7 @@ proc download_file(self: Board, post: Post) =
     if old_file[0] == "":
       file_channel.send((previewfilename: post.file.previewfilename, orig_filename: post.file.orig_filename, board: self.name, mode: self.file_options))
     else: 
-      info(fmt"Ignoring filename post.file.orig_filename because hash already exists.")
+      #info(fmt"Ignoring filename {post.file.orig_filename} because hash already exists.")
       post.file.orig_filename = old_file[0]
       post.file.previewfilename = old_file[1]
 
@@ -150,7 +149,7 @@ proc insert_post(self: Board, post: Post) =
   self.download_file(post)
 
   when defined(USE_POSTGRES):
-    db.exec(sql(fmt"""INSERT INTO "{self.name}" (media_id, poster_ip, num, subnum, thread_num, 
+    self.db.exec(sql(fmt"""INSERT INTO "{self.name}" (media_id, poster_ip, num, subnum, thread_num, 
       op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,
       media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler,
       deleted, capcode, email, name, trip, title, comment,
@@ -162,7 +161,7 @@ proc insert_post(self: Board, post: Post) =
       post.poster_hash, post.country, post.file.exif
     )
   else:
-    db.exec(sql(fmt"""INSERT IGNORE INTO `{self.name}` (media_id, poster_ip, num, subnum, thread_num, 
+    self.db.exec(sql(fmt"""INSERT IGNORE INTO `{self.name}` (media_id, poster_ip, num, subnum, thread_num, 
       op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,
       media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler,
       deleted, capcode, email, name, trip, title, comment,
@@ -179,17 +178,17 @@ proc set_thread_archived(self: var Board, thread_num: int, archived_timestamp: i
   self.threads.del(thread_num)
 
   when defined(USE_POSTGRES):
-    db.exec(sql(&"UPDATE \"{self.name}\" SET timestamp_expired = ? WHERE thread_num = ? AND op = true"), archived_timestamp,thread_num)
+    self.db.exec(sql(&"UPDATE \"{self.name}\" SET timestamp_expired = ? WHERE thread_num = ? AND op = true"), archived_timestamp,thread_num)
   else:
-    db.exec(sql(fmt"UPDATE `{self.name}` SET timestamp_expired = ? WHERE thread_num = ? AND op = 1"), archived_timestamp,thread_num)
+    self.db.exec(sql(fmt"UPDATE `{self.name}` SET timestamp_expired = ? WHERE thread_num = ? AND op = 1"), archived_timestamp,thread_num)
 
 proc set_thread_deleted(self: var Board, thread_num: int) =
   notice(fmt"Setting status of thread #{thread_num} from /{self.name}/ as deleted.")
   self.threads.del(thread_num)
   when defined(USE_POSTGRES):
-    db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE thread_num = ? AND op = true"), thread_num)
+    self.db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE thread_num = ? AND op = true"), thread_num)
   else:
-    db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE thread_num = ? AND op = 1"), thread_num)
+    self.db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE thread_num = ? AND op = 1"), thread_num)
 
 proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
   notice(fmt"Deleting {post_nums.len} post(s) in thread #{thread_num} from /{self.name}/.")
@@ -197,9 +196,9 @@ proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
   self.threads[thread_num].posts = self.threads[thread_num].posts.filter(proc(x: int): bool = not(x in post_nums))
 
   when defined(USE_POSTGRES):
-    db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE num in ("&post_nums.join(",")&")"))
+    self.db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE num in ("&post_nums.join(",")&")"))
   else:
-    db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE num in ("&post_nums.join(",")&")"))
+    self.db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE num in ("&post_nums.join(",")&")"))
 
 proc check_thread_status(self: var Board, thread: var Topic) =
   var status: JsonNode
@@ -269,10 +268,10 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.download_file(op_post)
   
     notice(fmt"Inserting Thread #{thread.num} ({posts.len} posts) from /{self.name}/ into the database.")
-    db.exec(sql"START TRANSACTION")
+    self.db.exec(sql"START TRANSACTION")
   
     when defined(USE_POSTGRES):
-      db.exec(sql(fmt"""INSERT INTO "{self.name}" (media_id, poster_ip, num, subnum, thread_num, 
+      self.db.exec(sql(fmt"""INSERT INTO "{self.name}" (media_id, poster_ip, num, subnum, thread_num, 
         op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,
         media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler,
         deleted, capcode, email, name, trip, title, comment,
@@ -284,7 +283,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
         op_post.comment, op_post.sticky, op_post.locked, op_post.poster_hash, op_post.country, op_post.file.exif
       )
     else:
-      db.exec(sql(fmt"""INSERT IGNORE INTO `{self.name}` (media_id, poster_ip, num, subnum, thread_num, 
+      self.db.exec(sql(fmt"""INSERT IGNORE INTO `{self.name}` (media_id, poster_ip, num, subnum, thread_num, 
         op, timestamp, timestamp_expired, preview_orig, preview_w, preview_h,
         media_filename, media_w, media_h, media_size, media_hash, media_orig, spoiler,
         deleted, capcode, email, name, trip, title, comment,
@@ -302,7 +301,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
         thread.posts.add(post.num)
         self.insert_post(post)
   
-    db.exec(sql"COMMIT")
+    self.db.exec(sql"COMMIT")
 
 
   elif queue_option == sUpdate_Topic:
@@ -321,7 +320,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     if deleted_posts.len > 0: 
       self.set_posts_deleted(thread.num, deleted_posts)
 
-    db.exec(sql"START TRANSACTION")
+    self.db.exec(sql"START TRANSACTION")
 
     for post in posts:
       let post_num = post["no"].getInt()
@@ -332,7 +331,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
           thread.posts.add(post_num)
           inc(new_posts)
 
-    db.exec(sql"COMMIT")
+    self.db.exec(sql"COMMIT")
 
     if new_posts > 0:
       info(fmt"inserting {new_posts} new post(s) into {$thread.num} from /{self.name}/.")
@@ -419,6 +418,7 @@ proc poll_queue*(self: var Board) =
     self.scrape()
 
 proc init*(self: var Board) =
+  html_purifier.compileRegex()
   self.create_board_table()
   self.create_sql_procedures()
 
@@ -426,3 +426,5 @@ proc init*(self: var Board) =
     self.scrape_archived_threads()
 
   self.scrape()
+
+
