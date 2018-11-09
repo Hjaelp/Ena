@@ -1,7 +1,8 @@
 # Ena - db_mysql_setup.nim
 # Almost all of the SQL statements are copied from Fuuka/Asagi for compatibility.
 
-import db_mysql, strformat, strutils
+import db_mysql
+import strformat, strutils
 
 proc db_connect*(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME: string): DbConn =
   result = open(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
@@ -296,7 +297,7 @@ proc create_procedures*(board_name: string, db: DbConn) =
   db.exec(sql(fmt"""CREATE TRIGGER `before_ins_{board_name}` BEFORE INSERT ON `{board_name}`
   FOR EACH ROW
   BEGIN
-    IF NEW.media_hash IS NOT NULL THEN
+    IF NEW.media_hash > ' ' THEN
       CALL insert_image_{board_name}(NEW.media_hash, NEW.media_orig, NEW.preview_orig, NEW.op);
       SET NEW.media_id = LAST_INSERT_ID();
     END IF;

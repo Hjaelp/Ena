@@ -115,6 +115,8 @@ proc create_tables*(board_name: string, db: DbConn) =
     UNIQUE (num, subnum)
   )"""))
 
+  db.exec(sql(&"ALTER TABLE \"{board_name}\" DROP CONSTRAINT \"{board_name}_media_id_fkey\""))
+
   db.exec(sql(&"CREATE INDEX IF NOT EXISTS \"{board_name}_num_index\" on \"{board_name}\" (num)"))
   db.exec(sql(&"CREATE INDEX IF NOT EXISTS \"{board_name}_subnum_index\" on \"{board_name}\" (subnum)"))
   db.exec(sql(&"CREATE INDEX IF NOT EXISTS \"{board_name}_thread_num_index\" on \"{board_name}\" (thread_num)"))
@@ -306,7 +308,7 @@ proc create_procedures*(board_name: string, db: DbConn) =
       
   db.exec(sql(fmt"""CREATE OR REPLACE FUNCTION "{board_name}_before_insert"() RETURNS trigger AS $$
   BEGIN
-    IF NEW.media_hash IS NOT NULL THEN
+    IF NEW.media_hash > ' ' THEN
       SELECT "{board_name}_insert_image"(NEW) INTO NEW.media_id;
     END IF;
     RETURN NEW;
