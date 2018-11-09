@@ -4,13 +4,11 @@
 import db_postgres
 import strformat, strutils
 
-var db*: DbConn
+proc db_connect*(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME: string): DbConn =
+  result = open(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
+  discard result.setEncoding("utf8mb4")
 
-proc db_connect*(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME: string) =
-  db = open(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
-  discard db.setEncoding("UTF8")
-
-proc create_tables*(board_name: string) =
+proc create_tables*(board_name: string, db: DbConn) =
   db.exec(sql"START TRANSACTION")
 
   db.exec(sql(fmt"""CREATE TABLE IF NOT EXISTS "{board_name}_threads" (
@@ -136,7 +134,7 @@ proc create_tables*(board_name: string) =
 
   db.exec(sql"COMMIT")
 
-proc create_procedures*(board_name: string) =
+proc create_procedures*(board_name: string, db: DbConn) =
   db.exec(sql"START TRANSACTION")
 
   db.exec(sql(fmt"""CREATE OR REPLACE FUNCTION "{board_name}_update_thread"(n_row "{board_name}") RETURNS void AS $$
