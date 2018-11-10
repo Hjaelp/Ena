@@ -92,7 +92,7 @@ proc main() {.async.} =
 
   var boards: seq[Board]
   for board in BOARDS_TO_ARCHIVE:
-    let download_thumbs:bool = config.getSectionValue(board, "Download_thumbs") == "false"
+    let download_thumbs:bool = config.getSectionValue(board, "Download_thumbs") != "false"
     let download_images:bool = config.getSectionValue(board, "Download_images") == "true"
     let scrape_internal:bool = config.getSectionValue(board, "Scrape_internal") == "true"
 
