@@ -1,52 +1,27 @@
 # Ena - main.nim
 # Copyright 2018 - Joseph A.
 
-import os, asyncdispatch, tables, deques
+import os, asyncdispatch, tables, deques, threadpool
 import httpclient, parsecfg, strutils, logging
 from math import floor
 
 import scraper
 import file_downloader
 
-type BoardThread = 
-  tuple[
-    logger: Logger, 
-    boards: seq[Board],
-    api: int
-  ]
 type FileThread  = tuple[logger: Logger, file_dir: string]
 
-proc board_chunk(boards: seq[Board], chunks: int): seq[seq[Board]] =
-  result = @[]
-  let arrlen = boards.len
-  var size = (arrlen div chunks)
+proc poll_board(logger: Logger, brd: Board, delay: int) {.thread.} =
+  addHandler(logger)
 
-  var index = 0;
-  while index < arrlen: 
-      if index + size >= arrlen: 
-          size = arrlen - index - 1
-          echo size
-      result.add([boards[index..(size + index)]]);
-      index += (size+1);
+  var board = brd
 
-
-proc poll_board(data: BoardThread) {.thread.} =
-  addHandler(data.logger)
-
-  notice("thread started") 
-
-  var boards = data.boards
-  let num_boards = boards.len-1
-
-  for i in 0..num_boards:
-    notice("Creating database tables and procedures for /$1/." % boards[i].name)
-    boards[i].init()
-    notice("Done. Now scraping /$1/." % boards[i].name)
+  notice("/$1/ | Creating database tables and procedures." % board.name)
+  board.init()
+  notice("/$1/ | Done. Now scraping." % board.name)
 
   while true:
-    for i in 0..num_boards:
-      boards[i].poll_queue()
-      sleep(data.api)
+    board.poll_queue()
+    sleep(delay)
 
 
 proc main() {.async.} =
@@ -56,17 +31,16 @@ proc main() {.async.} =
 
   let 
     VERSION =           config.getSectionValue("Application", "Version")
-    API_COOLDOWN =      parseInt(config.getSectionValue("Config", "API_cooldown"))
+    DEFAULT_COOLDOWN =  parseInt(config.getSectionValue("Config", "Default_API_cooldown"))
     DB_HOST =           config.getSectionValue("Config", "DB_host")
     DB_USERNAME =       config.getSectionValue("Config", "DB_username")
     DB_PASSWORD =       config.getSectionValue("Config", "DB_password")
     DB_NAME =           config.getSectionValue("Config", "DB_database_name")
     FILE_DIRECTORY =    config.getSectionValue("Config", "File_Base_directory")
     FILE_THREADS  =     parseInt(config.getSectionValue("Config", "File_Download_Threads"))
-    BOARD_THREADS =     parseInt(config.getSectionValue("Config", "Board_Threads"))
     LOG_LEVEL =         config.getSectionValue("Config", "Logging_level").toLower()
     BOARDS_TO_ARCHIVE = config.getSectionValue("Boards", "Boards_to_archive").split(";")
-    MULTITHREADED = if BOARD_THREADS > 1 and BOARDS_TO_ARCHIVE.len > 1: true else: false
+    MULTITHREADED =     config.getSectionValue("Config", "Multithreaded") == "true"
 
 
   let con_logger = newConsoleLogger(fmtStr = "$time | $levelname | ", 
@@ -96,6 +70,8 @@ proc main() {.async.} =
     let download_images:bool = config.getSectionValue(board, "Download_images") == "true"
     let scrape_internal:bool = config.getSectionValue(board, "Scrape_internal") == "true"
 
+    let board_api_cooldown:string = config.getSectionValue(board, "Time_between_requests")
+
     boards.add(
       Board(
         name: board, 
@@ -107,27 +83,25 @@ proc main() {.async.} =
                       else: dNo_files,
         scrape_archive: scrape_internal,
         db: if MULTITHREADED: db_connect(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
-            else: db_conn
+            else: db_conn,
+        api_cooldown: if isDigit(board_api_cooldown): parseInt(board_api_cooldown)
+            else: DEFAULT_COOLDOWN
       )
     )
 
-  if BOARD_THREADS > 1 and BOARDS_TO_ARCHIVE.len > 1:
+  if MULTITHREADED:
     db_conn.close()
-    var board_chunks = board_chunk(boards, BOARD_THREADS)
 
     notice("Ena $1 now starting in multi-threaded mode, using $2 threads for $3 boards." % 
-      [VERSION, $board_chunks.len, $BOARDS_TO_ARCHIVE.len])
-
-    var board_threads: seq[Thread[BoardThread]] = 
-      newSeq[Thread[BoardThread]](BOARD_THREADS)
+      [VERSION, $BOARDS_TO_ARCHIVE.len, $BOARDS_TO_ARCHIVE.len])
   
-    for i, t in board_threads:
-      createThread(board_threads[i], poll_board, (con_logger, board_chunks[i], API_COOLDOWN))
+    for i, t in BOARDS_TO_ARCHIVE:
+      spawn poll_board(con_logger, boards[i], boards[i].api_cooldown)
 
-    joinThreads(board_threads)
+    sync()
 
   else:
-    notice("Ena $1 now starting in single-threaded mode, using 1 thread for $3 boards." %
+    notice("Ena $1 now starting in single-threaded mode, using 1 thread for $2 boards." %
       [VERSION, $BOARDS_TO_ARCHIVE.len])
   
     let num_boards = boards.len-1
@@ -142,7 +116,7 @@ proc main() {.async.} =
     while true:
       for i in 0..num_boards:
         boards[i].poll_queue()
-        await sleepAsync(API_COOLDOWN)
+        await sleepAsync(DEFAULT_COOLDOWN)
 
 
 
