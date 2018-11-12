@@ -72,7 +72,7 @@ type
 proc newPost(jsonPost: JsonNode, thread_num: int): Post =
   var media_file: File
 
-  if not jsonPost.hasKey("no") or jsonPost["no"] == 0:
+  if not jsonPost.hasKey("no"):
     return
   
   if jsonPost.hasKey("filename"):
