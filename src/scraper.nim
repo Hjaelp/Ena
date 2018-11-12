@@ -25,6 +25,7 @@ type Scrape_options = enum
 type 
   Board* = ref object
     api_lastmodified*: string
+    api_cooldown*: int
     client*: Httpclient
     name*: string
     file_options*: Downloader_Options
@@ -174,7 +175,7 @@ proc insert_post(self: Board, post: Post) =
     )
 
 proc set_thread_archived(self: var Board, thread_num: int, archived_timestamp: int) =
-  notice(fmt"Setting status of thread #{thread_num} from /{self.name}/ as archived.")
+  notice(fmt"/{self.name}/ | Setting status of thread #{thread_num} as archived.")
   self.threads.del(thread_num)
 
   when defined(USE_POSTGRES):
@@ -183,7 +184,7 @@ proc set_thread_archived(self: var Board, thread_num: int, archived_timestamp: i
     self.db.exec(sql(fmt"UPDATE `{self.name}` SET timestamp_expired = ? WHERE thread_num = ? AND op = 1"), archived_timestamp,thread_num)
 
 proc set_thread_deleted(self: var Board, thread_num: int) =
-  notice(fmt"Setting status of thread #{thread_num} from /{self.name}/ as deleted.")
+  notice(fmt"/{self.name}/ | Setting status of thread #{thread_num} as deleted.")
   self.threads.del(thread_num)
   when defined(USE_POSTGRES):
     self.db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE thread_num = ? AND op = true"), thread_num)
@@ -191,7 +192,7 @@ proc set_thread_deleted(self: var Board, thread_num: int) =
     self.db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE thread_num = ? AND op = 1"), thread_num)
 
 proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
-  notice(fmt"Deleting {post_nums.len} post(s) in thread #{thread_num} from /{self.name}/.")
+  notice(fmt"/{self.name}/ | Deleting {post_nums.len} post(s) in thread #{thread_num}.")
 
   self.threads[thread_num].posts = self.threads[thread_num].posts.filter(proc(x: int): bool = not(x in post_nums))
 
@@ -205,7 +206,7 @@ proc check_thread_status(self: var Board, thread: var Topic) =
   try:
     let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
     if body.len == 0:
-      error(fmt"check_thread_status(): Received empty body for Thread #{thread.num}")
+      error(fmt"/{self.name}/ | check_thread_status(): Received empty body for Thread #{thread.num}.")
       self.enqueue_for_check(thread)
       return
 
@@ -215,11 +216,11 @@ proc check_thread_status(self: var Board, thread: var Topic) =
     if error.split(" ")[0] == "404":
       self.set_thread_deleted(thread.num)
     else:
-      error(fmt"check_thread_status(): Received HTTP error: {error}.")
+      error(fmt"/{self.name}/ | check_thread_status(): Received HTTP error: {error}.")
       self.enqueue_for_check(thread)
     return
   except:
-    error(fmt"check_thread_status(): Non-HTTP exception raised. Creating a new client in 5 seconds. Exception: {getCurrentExceptionMsg()}.")
+    error(fmt"/{self.name}/ | check_thread_status(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
     sleep(5000)
     self.client.close()
     self.client = newHttpClient()
@@ -239,7 +240,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
   try:
     let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
     if body.len == 0:
-      error(fmt"scrape_thread(): Received empty body for Thread #{thread.num}")
+      error(fmt"/{self.name}/ | scrape_thread(): Received empty body for Thread #{thread.num}")
       self.enqueue_for_check(thread)
       return
 
@@ -249,12 +250,12 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     if error.split(" ")[0] == "404":
       return
     else:
-      error(fmt"scrape_thread(): Received Exception: {getCurrentExceptionMsg()}.")
+      error(fmt"/{self.name}/ | scrape_thread(): Received Exception: {getCurrentExceptionMsg()}.")
       self.enqueue_for_check(thread)
     return
   except:
     let error = getCurrentExceptionMsg()
-    error(fmt"scrape_thread(): Non-HTTP exception raised. Creating a new client in 5 seconds. Exception: {error}.")
+    error(fmt"/{self.name}/ | scrape_thread(): Non-HTTP exception raised. Exception: {error}.")
     sleep(5000)
     self.client.close()
     self.client = newHttpClient()
@@ -270,7 +271,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     var op_post: Post = newPost(posts[0], thread.num)
 
     if op_post == nil:
-      error(fmt"OP post of {thread.num} from /{self.name}/ is nil. Adding back to the queue.")
+      error(fmt"/{self.name}/ | OP post of {thread.num} doesn't exist. Adding back to the queue.")
       self.enqueue_for_check(thread)
       return
 
@@ -279,7 +280,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 
     self.download_file(op_post)
   
-    notice(fmt"Inserting Thread #{thread.num} ({posts.len} posts) from /{self.name}/ into the database.")
+    notice(fmt"/{self.name}/ | Inserting Thread #{thread.num} ({posts.len} posts).")
     self.db.exec(sql"START TRANSACTION")
   
     when defined(USE_POSTGRES):
@@ -346,7 +347,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.db.exec(sql"COMMIT")
 
     if new_posts > 0:
-      info(fmt"inserting {new_posts} new post(s) into {$thread.num} from /{self.name}/.")
+      info(fmt"/{self.name}/ | inserting {new_posts} new post(s) into {$thread.num}.")
 
 
 proc scrape_archived_threads*(self: var Board) =
@@ -368,7 +369,7 @@ proc scrape*(self: var Board) =
 
   var live_threads: seq[int] = @[]
 
-  info(fmt"Scraping /{self.name}/.")
+  info(fmt"/{self.name}/ | Catalog | Checking for changes.")
   var response: Response
   try:
     response = self.client.get(fmt"https://a.4cdn.org/{self.name}/threads.json")
@@ -402,15 +403,15 @@ proc scrape*(self: var Board) =
       self.api_lastmodified = response.headers["last-modified"]
 
     elif response.status == "304 Not Modified":
-      info("scrape(): Catalog has not been modified.")
+      info("/{self.name}/ | scrape(): Catalog has not been modified.")
       return
 
     else:
       error("Scraping {self.name} failed! Response details: "&repr(response))
   except HttpRequestError:
-    error("scrape(): HTTP Error: "&getCurrentExceptionMsg())
+    error("/{self.name}/ | scrape(): HTTP Error: "&getCurrentExceptionMsg())
   except:
-    error(fmt"scrape(): Non-HTTP exception raised. Creating a new client in 5 seconds. Exception: {getCurrentExceptionMsg()}.")
+    error(fmt"/{self.name}/ | scrape(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
     sleep(5000)
     self.client.close()
     self.client = newHttpClient()
