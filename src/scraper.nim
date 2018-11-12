@@ -72,7 +72,7 @@ type
 proc newPost(jsonPost: JsonNode, thread_num: int): Post =
   var media_file: File
 
-  if not jsonPost.hasKey("no"):
+  if not jsonPost.hasKey("no") or jsonPost["no"] == 0:
     return
   
   if jsonPost.hasKey("filename"):
@@ -203,7 +203,13 @@ proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
 proc check_thread_status(self: var Board, thread: var Topic) =
   var status: JsonNode
   try:
-    status = parseJson(self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json"))
+    let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
+    if body.len == 0:
+      error(fmt"check_thread_status(): Received empty body for Thread #{thread.num}")
+      self.enqueue_for_check(thread)
+      return
+
+    status = parseJson(body)
   except HttpRequestError:
     let error = getCurrentExceptionMsg()
     if error.split(" ")[0] == "404":
@@ -231,7 +237,13 @@ proc scrape_thread(self: var Board, thread: var Topic) =
   var posts: JsonNode
 
   try:
-    posts = parseJson(self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json"))
+    let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
+    if body.len == 0:
+      error(fmt"scrape_thread(): Received empty body for Thread #{thread.num}")
+      self.enqueue_for_check(thread)
+      return
+
+    posts = parseJson(body)
   except HttpRequestError:
     let error = getCurrentExceptionMsg()
     if error.split(" ")[0] == "404":
@@ -359,7 +371,7 @@ proc scrape*(self: var Board) =
   info(fmt"Scraping /{self.name}/.")
   var response: Response
   try:
-    response = self.client.request(fmt"https://a.4cdn.org/{self.name}/threads.json", httpMethod = HttpGET)
+    response = self.client.get(fmt"https://a.4cdn.org/{self.name}/threads.json")
     if response != nil and response.body != "":
       let catalog = parseJson(response.body)
       for page in catalog:
