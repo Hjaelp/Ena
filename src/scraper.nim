@@ -204,11 +204,10 @@ proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
 proc check_thread_status(self: var Board, thread: var Topic) =
   var status: JsonNode
   try:
-    let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
+    self.client.headers.del("If-Modified-Since")
+    let body = self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
     if body.len == 0:
-      error(fmt"/{self.name}/ | check_thread_status(): Received empty body for Thread #{thread.num}.")
-      self.enqueue_for_check(thread)
-      return
+      raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
     status = parseJson(body)
   except HttpRequestError:
@@ -221,7 +220,7 @@ proc check_thread_status(self: var Board, thread: var Topic) =
     return
   except:
     error(fmt"/{self.name}/ | check_thread_status(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
-    sleep(5000)
+    sleep(3000)
     self.client.close()
     self.client = newHttpClient()
     self.enqueue_for_check(thread)
@@ -238,11 +237,10 @@ proc scrape_thread(self: var Board, thread: var Topic) =
   var posts: JsonNode
 
   try:
-    let body = self.client.get(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json").body
+    self.client.headers.del("If-Modified-Since")
+    let body = self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
     if body.len == 0:
-      error(fmt"/{self.name}/ | scrape_thread(): Received empty body for Thread #{thread.num}")
-      self.enqueue_for_check(thread)
-      return
+      raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
     posts = parseJson(body)
   except HttpRequestError:
@@ -256,7 +254,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
   except:
     let error = getCurrentExceptionMsg()
     error(fmt"/{self.name}/ | scrape_thread(): Non-HTTP exception raised. Exception: {error}.")
-    sleep(5000)
+    sleep(3000)
     self.client.close()
     self.client = newHttpClient()
     self.enqueue_for_check(thread)
@@ -365,7 +363,7 @@ proc scrape_archived_threads*(self: var Board) =
 
 proc scrape*(self: var Board) =
   if self.api_lastmodified != "":
-    self.client.headers = newHttpHeaders({"If-Modified-Since": self.api_lastmodified})
+    self.client.headers["If-Modified-Since"] =  self.api_lastmodified
 
   var live_threads: seq[int] = @[]
 
@@ -403,16 +401,16 @@ proc scrape*(self: var Board) =
       self.api_lastmodified = response.headers["last-modified"]
 
     elif response.status == "304 Not Modified":
-      info("/{self.name}/ | scrape(): Catalog has not been modified.")
+      info(fmt"/{self.name}/ | scrape(): Catalog has not been modified.")
       return
 
     else:
-      error("Scraping {self.name} failed! Response details: "&repr(response))
+      error(fmt"/{self.name}/ | scrape(): Scraping failed! Response details: {repr(response)}")
   except HttpRequestError:
-    error("/{self.name}/ | scrape(): HTTP Error: "&getCurrentExceptionMsg())
+    error(fmt"/{self.name}/ | scrape(): HTTP Error: {getCurrentExceptionMsg()}")
   except:
     error(fmt"/{self.name}/ | scrape(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
-    sleep(5000)
+    sleep(3000)
     self.client.close()
     self.client = newHttpClient()
     
