@@ -269,8 +269,8 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     var op_post: Post = newPost(posts[0], thread.num)
 
     if op_post == nil:
-      error(fmt"/{self.name}/ | OP post of {thread.num} doesn't exist. Adding back to the queue.")
-      self.enqueue_for_check(thread)
+      error(fmt"/{self.name}/ | OP post of {thread.num} doesn't exist. Discarding.")
+      #self.enqueue_for_check(thread)
       return
 
     if op_post.locked == 1 and archived_timestamp > 0:
@@ -321,8 +321,9 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     var deleted_posts: seq[int] = @[]
     var new_posts: int = 0
 
-    for post in posts:
-      api_posts.add(post["no"].getInt())
+    let num = post{"no"}.getInt()
+    if num > 0:
+      api_posts.add(num)
 
     for old_post in old_posts:
       if not(old_post in api_posts):
