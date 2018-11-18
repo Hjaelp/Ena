@@ -3,17 +3,24 @@
 
 import os, asyncdispatch, tables, deques, threadpool
 import httpclient, parsecfg, strutils, logging
-from math import floor
 
 import scraper
 import file_downloader
 
+type BoardThread = tuple[logger: Logger, board: Board]
 type FileThread  = tuple[logger: Logger, file_dir: string]
 
-proc poll_board(logger: Logger, brd: Board, delay: int) {.thread.} =
-  addHandler(logger)
-
+proc poll_board(brd: Board) {.async.} =
   var board = brd
+
+  while true:
+    board.poll_queue()
+    await sleepasync(board.api_cooldown)
+
+proc poll_board(data: BoardThread) {.thread.} =
+  addHandler(data.logger)
+
+  var board = data.board
 
   notice("/$1/ | Creating database tables and procedures." % board.name)
   board.init()
@@ -21,7 +28,7 @@ proc poll_board(logger: Logger, brd: Board, delay: int) {.thread.} =
 
   while true:
     board.poll_queue()
-    sleep(delay)
+    sleep(board.api_cooldown)
 
 
 proc main() {.async.} =
@@ -56,7 +63,7 @@ proc main() {.async.} =
   var file_dl_threads: seq[Thread[FileThread]] = 
     newSeq[Thread[FileThread]](FILE_THREADS)
 
-  for i, t in file_dl_threads:
+  for i, _ in file_dl_threads:
     createThread(file_dl_threads[i], 
       initFileDownloader, 
       (con_logger, FILE_DIRECTORY)
@@ -76,7 +83,6 @@ proc main() {.async.} =
       Board(
         name: board, 
         threads: initTable[int, Topic](), 
-        client: newHttpClient(), 
         scrape_queue: initDeque[Topic](),
         file_options: if download_thumbs and download_images: dAll_files
                       elif download_thumbs: dThumbnails
@@ -95,10 +101,14 @@ proc main() {.async.} =
     notice("Ena $1 now starting in multi-threaded mode, using $2 threads for $3 boards." % 
       [VERSION, $BOARDS_TO_ARCHIVE.len, $BOARDS_TO_ARCHIVE.len])
   
-    for i, t in BOARDS_TO_ARCHIVE:
-      spawn poll_board(con_logger, boards[i], boards[i].api_cooldown)
+    var board_threads: seq[Thread[BoardThread]] = 
+      newSeq[Thread[BoardThread]](BOARDS_TO_ARCHIVE.len)
+  
+    for i, _ in board_threads:
+      createThread(board_threads[i], poll_board, (con_logger, boards[i]))
+      await sleepAsync(500)
 
-    sync()
+    joinThreads(board_threads)
 
   else:
     notice("Ena $1 now starting in single-threaded mode, using 1 thread for $2 boards." %
@@ -108,15 +118,14 @@ proc main() {.async.} =
   
     notice("Creating database tables and procedures.")
 
-    for i, b in boards:
+    for i, _ in boards:
       boards[i].init()
   
     notice("Done. Now scraping.")
   
-    while true:
-      for i in 0..num_boards:
-        boards[i].poll_queue()
-        await sleepAsync(DEFAULT_COOLDOWN)
+    for i, _ in boards:
+      asyncCheck poll_board(boards[i])
+      await sleepAsync(250)
 
 
 
