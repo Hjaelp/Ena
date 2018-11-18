@@ -20,6 +20,7 @@ var reSpoiler {.threadvar.}: Regex
 var reSpoiler2 {.threadvar.}: Regex
 var reNewline {.threadvar.}: Regex
 var reTags {.threadvar.}: Regex
+var reSJIS {.threadvar.}: Regex
 
 #let reEntity = nre.re("&#?(\\w+);")
 
@@ -86,5 +87,6 @@ proc compileRegex*() =
     reMath2 = re("<div class=\"math\">(.*?)</div>",{reDotAll, reStudy})
     reSpoiler = re("<span class=\"spoiler\"[^>]*>(.*?)</span>",{reDotAll, reStudy})
     reSpoiler2 = re("<s>(.*?)</s>",{reDotAll, reStudy})
+    reSJIS = re("<span class=\"sjis\">(.*?)</span>",{reDotAll, reStudy})
     reNewline = re("<br\\s*/?>",{reStudy})
     reTags = re("<[^>]*>",{reStudy})
