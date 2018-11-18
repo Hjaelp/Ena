@@ -359,9 +359,13 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 proc add_previous_threads(self: Board) =
   var i = 0
 
-  self.db.exec(sql"SET SESSION group_concat_max_len = 65536")
+  when defined(USE_POSTGRES):
+    let stmt = sql(&"SELECT thread_num, STRING_AGG(num::character VARYING, ',' ORDER BY num asc), MAX(timestamp) AS highest FROM \"{self.name}\" GROUP BY thread_num ORDER BY highest DESC LIMIT 150")
+  else:
+    self.db.exec(sql"SET SESSION group_concat_max_len = 65536")
+    let stmt = sql(fmt"SELECT thread_num, GROUP_CONCAT(num), MAX(timestamp) AS highest FROM `{self.name}` GROUP BY thread_num order BY highest DESC LIMIT 150")
 
-  for row in self.db.fastRows(sql(fmt"select thread_num, group_concat(num), max(timestamp) as highest from `{self.name}` group by thread_num order by highest desc limit 150")):
+  for row in self.db.fastRows(stmt):
     let thread_num = parseInt(row[0])
     let filter = row[1].split(',').filter(proc(i: string): bool = return i != "")
     let posts = filter.map(proc(i: string): int = parseInt(i))

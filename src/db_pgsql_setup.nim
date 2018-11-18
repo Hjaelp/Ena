@@ -115,7 +115,7 @@ proc create_tables*(board_name: string, db: DbConn) =
     UNIQUE (num, subnum)
   )"""))
 
-  db.exec(sql(&"ALTER TABLE \"{board_name}\" DROP CONSTRAINT \"{board_name}_media_id_fkey\""))
+  db.exec(sql(&"ALTER TABLE \"{board_name}\" DROP CONSTRAINT IF EXISTS \"{board_name}_media_id_fkey\""))
 
   db.exec(sql(&"CREATE INDEX IF NOT EXISTS \"{board_name}_num_index\" on \"{board_name}\" (num)"))
   db.exec(sql(&"CREATE INDEX IF NOT EXISTS \"{board_name}_subnum_index\" on \"{board_name}\" (subnum)"))
