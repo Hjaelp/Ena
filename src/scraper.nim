@@ -118,6 +118,19 @@ proc newPost(jsonPost: JsonNode, thread_num: int): Post =
       file: media_file
     )
 
+proc print_queue(self:Board): string =
+  var new_thread, update_thread, status_thread: int = 0
+  for t in self.scrape_queue:
+    case t.queue_option
+    of sEntire_Topic:
+      inc new_thread
+    of sUpdate_Topic:
+      inc update_thread:
+    of sCheck_Status:
+      inc status_thread
+
+  return fmt"(New: {new_thread}, Upd: {update_thread}, Chk: {status_thread})"
+
 proc create_board_table*(self: Board) =
   create_tables(self.name, self.db)
 
@@ -180,7 +193,7 @@ proc insert_post(self: Board, post: Post) =
     )
 
 proc set_thread_archived(self: var Board, thread_num: int, archived_timestamp: int) =
-  notice(fmt"/{self.name}/ | Setting status of thread #{thread_num} as archived.")
+  notice(fmt"/{self.name}/ {print_queue(self)} | Setting status of thread #{thread_num} as archived.")
   self.threads.del(thread_num)
 
   when defined(USE_POSTGRES):
@@ -189,7 +202,7 @@ proc set_thread_archived(self: var Board, thread_num: int, archived_timestamp: i
     self.db.exec(sql(fmt"UPDATE `{self.name}` SET timestamp_expired = ? WHERE thread_num = ? AND op = 1"), archived_timestamp,thread_num)
 
 proc set_thread_deleted(self: var Board, thread_num: int) =
-  notice(fmt"/{self.name}/ | Setting status of thread #{thread_num} as deleted.")
+  notice(fmt"/{self.name}/ {print_queue(self)} | Setting status of thread #{thread_num} as deleted.")
   self.threads.del(thread_num)
   when defined(USE_POSTGRES):
     self.db.exec(sql(&"UPDATE \"{self.name}\" SET deleted = true WHERE thread_num = ? AND op = true"), thread_num)
@@ -197,7 +210,7 @@ proc set_thread_deleted(self: var Board, thread_num: int) =
     self.db.exec(sql(fmt"UPDATE `{self.name}` SET deleted = 1 WHERE thread_num = ? AND op = 1"), thread_num)
 
 proc set_posts_deleted(self: var Board, thread_num: int, post_nums: seq[int]) =
-  notice(fmt"/{self.name}/ | Deleting {post_nums.len} post(s) in thread #{thread_num}.")
+  notice(fmt"/{self.name}/ {print_queue(self)} | Deleting {post_nums.len} post(s) in thread #{thread_num}.")
 
   self.threads[thread_num].posts = self.threads[thread_num].posts.filter(proc(x: int): bool = not(x in post_nums))
 
@@ -283,7 +296,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 
     self.download_file(op_post)
   
-    notice(fmt"/{self.name}/ | Inserting Thread #{thread.num} ({posts.len} posts).")
+    notice(fmt"/{self.name}/ {print_queue(self)} | Inserting Thread #{thread.num} ({posts.len} posts).")
 
     self.db.exec(sql"START TRANSACTION")
   
@@ -353,7 +366,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.db.exec(sql"COMMIT")
 
     if new_posts > 0:
-      info(fmt"/{self.name}/ | inserting {new_posts} new post(s) into {$thread.num}.")
+      info(fmt"/{self.name}/ {print_queue(self)} | inserting {new_posts} new post(s) into {$thread.num}.")
 
 
 proc add_previous_threads(self: Board) =
@@ -394,7 +407,7 @@ proc scrape*(self: var Board) =
 
   var live_threads: seq[int] = @[]
 
-  info(fmt"/{self.name}/ | Catalog | Checking for changes.")
+  info(fmt"/{self.name}/ {print_queue(self)} | Catalog | Checking for changes.")
   var response: Response
   try:
     response = self.client.cf_get(fmt"https://a.4cdn.org/{self.name}/threads.json")
