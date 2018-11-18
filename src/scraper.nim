@@ -24,13 +24,17 @@ type Scrape_options = enum
     sCheck_Status
 
 type 
+  Board_Config* = ref object
+    api_cooldown*: int
+    file_options*: Downloader_Options
+    restore_state*: bool
+    scrape_archive*: bool
+
   Board* = ref object
     api_lastmodified*: string
-    api_cooldown*: int
     client*: Httpclient
+    config*: Board_Config
     name*: string
-    file_options*: Downloader_Options
-    scrape_archive*: bool
     threads*: Table[int, Topic]
     scrape_queue*: Deque[Topic]
     db*: DbConn
@@ -132,13 +136,13 @@ proc media_file_exists(self: Board, hash: string): array[0..1, string] =
     result = ["", ""]
 
 proc download_file(self: Board, post: Post) =
-  if self.file_options == dNo_files:
+  if self.config.file_options == dNo_files:
     return
 
   if post.file.hash != "":
     let old_file = self.media_file_exists(post.file.hash)
     if old_file[0] == "":
-      file_channel.send((previewfilename: post.file.previewfilename, orig_filename: post.file.orig_filename, board: self.name, mode: self.file_options))
+      file_channel.send((previewfilename: post.file.previewfilename, orig_filename: post.file.orig_filename, board: self.name, mode: self.config.file_options))
     else: 
       #info(fmt"Ignoring filename {post.file.orig_filename} because hash already exists.")
       post.file.orig_filename = old_file[0]
@@ -352,6 +356,21 @@ proc scrape_thread(self: var Board, thread: var Topic) =
       info(fmt"/{self.name}/ | inserting {new_posts} new post(s) into {$thread.num}.")
 
 
+proc add_previous_threads(self: Board) =
+  var i = 0
+
+  self.db.exec(sql"SET SESSION group_concat_max_len = 65536")
+
+  for row in self.db.fastRows(sql(fmt"select thread_num, group_concat(num), max(timestamp) as highest from `{self.name}` group by thread_num order by highest desc limit 150")):
+    let thread_num = parseInt(row[0])
+    let filter = row[1].split(',').filter(proc(i: string): bool = return i != "")
+    let posts = filter.map(proc(i: string): int = parseInt(i))
+    let new_thread = Topic(num: thread_num, posts: posts, last_modified: parseInt(row[2]), queue_option: sUpdate_Topic)
+    self.threads.add(thread_num, new_thread)
+    inc i
+
+  notice(fmt"/{self.name}/ | Added {i} threads.")
+
 proc scrape_archived_threads*(self: var Board) =
   info("Scraping the internal archives.")
   try:
@@ -439,7 +458,10 @@ proc init*(self: var Board) =
   self.create_board_table()
   self.create_sql_procedures()
 
-  if self.scrape_archive:
+  if self.config.restore_state:
+    self.add_previous_threads()
+
+  if self.config.scrape_archive:
     self.scrape_archived_threads()
 
   self.scrape()

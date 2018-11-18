@@ -12,15 +12,17 @@ type FileThread  = tuple[logger: Logger, file_dir: string]
 
 proc poll_board(brd: Board) {.async.} =
   var board = brd
+  let delay: int = board.config.api_cooldown
 
   while true:
     board.poll_queue()
-    await sleepasync(board.api_cooldown)
+    await sleepasync(delay)
 
 proc poll_board(data: BoardThread) {.thread.} =
   addHandler(data.logger)
 
   var board = data.board
+  let delay: int = board.config.api_cooldown
 
   notice("/$1/ | Creating database tables and procedures." % board.name)
   board.init()
@@ -28,7 +30,7 @@ proc poll_board(data: BoardThread) {.thread.} =
 
   while true:
     board.poll_queue()
-    sleep(board.api_cooldown)
+    sleep(delay)
 
 
 proc main() {.async.} =
@@ -48,6 +50,7 @@ proc main() {.async.} =
     LOG_LEVEL =         config.getSectionValue("Config", "Logging_level").toLower()
     BOARDS_TO_ARCHIVE = config.getSectionValue("Boards", "Boards_to_archive").split(";")
     MULTITHREADED =     config.getSectionValue("Config", "Multithreaded") == "true"
+    RESTORE_STATE =     config.getSectionValue("Boards", "Restore_Previous_State") == "true"
 
 
   let con_logger = newConsoleLogger(fmtStr = "$time | $levelname | ", 
@@ -84,14 +87,18 @@ proc main() {.async.} =
         name: board, 
         threads: initTable[int, Topic](), 
         scrape_queue: initDeque[Topic](),
-        file_options: if download_thumbs and download_images: dAll_files
-                      elif download_thumbs: dThumbnails
-                      else: dNo_files,
-        scrape_archive: scrape_internal,
+        config: Board_Config(
+          api_cooldown: if isDigit(board_api_cooldown): parseInt(board_api_cooldown)
+            else: DEFAULT_COOLDOWN,
+          file_options: if download_thumbs and download_images: dAll_files
+               elif download_thumbs: dThumbnails
+               else: dNo_files,
+          restore_state: RESTORE_STATE,
+          scrape_archive: scrape_internal
+
+        ),
         db: if MULTITHREADED: db_connect(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
             else: db_conn,
-        api_cooldown: if isDigit(board_api_cooldown): parseInt(board_api_cooldown)
-            else: DEFAULT_COOLDOWN
       )
     )
 
