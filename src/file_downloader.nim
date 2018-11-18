@@ -4,6 +4,8 @@
 import os
 import httpclient, strutils, strformat, logging
 
+import cf_client
+
 type FileDownloader = ref object
   client: HttpClient
   file_dir: string
@@ -39,10 +41,10 @@ proc fetch(self: var FileDownloader, file: tuple) =
 
   try:
     info("Downloading file: "&file.orig_filename)
-    self.client.downloadFile(thumbUrl, thumbDestination)
+    self.client.cf_downloadFile(thumbUrl, thumbDestination)
 
     if file.mode == dAll_files:
-      self.client.downloadFile(imageUrl, imageDestination)
+      self.client.cf_downloadFile(imageUrl, imageDestination)
   except:
     let error = getCurrentExceptionMsg()
     if error.split(" ")[0] != "404":
@@ -52,10 +54,9 @@ proc fetch(self: var FileDownloader, file: tuple) =
         error(fmt"Error downloading file {file.orig_filename} - {error}")
 
       self.client.close()
-      self.client = newHttpClient()
+      self.client = newScrapingClient()
       notice("Adding to the back of the queue...")
       file_channel.send(file)
-      sleep(5000)
 
 proc poll(self: var FileDownloader) =
   var file = file_channel.recv()
@@ -63,10 +64,10 @@ proc poll(self: var FileDownloader) =
 
 
 proc initFileDownloader*(data: tuple[logger: Logger, file_dir: string]) {.thread.} =
-  var dl = FileDownloader(client: newHttpClient(), file_dir: data.file_dir)
+  var dl = FileDownloader(client: newScrapingClient(), file_dir: data.file_dir)
 
   addHandler(data.logger)
 
   while true:
     dl.poll()
-    sleep(1000)
+    sleep(250)

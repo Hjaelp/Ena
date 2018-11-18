@@ -14,6 +14,7 @@ else:
   import db_mysql_setup
   export db_mysql_setup.db_connect, db_mysql.DbConn, db_mysql.close
 
+import cf_client
 import file_downloader
 import html_purifier
 
@@ -205,7 +206,7 @@ proc check_thread_status(self: var Board, thread: var Topic) =
   var status: JsonNode
   try:
     self.client.headers.del("If-Modified-Since")
-    let body = self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
+    let body = self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
     if body.len == 0:
       raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
@@ -222,7 +223,7 @@ proc check_thread_status(self: var Board, thread: var Topic) =
     error(fmt"/{self.name}/ | check_thread_status(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
     sleep(3000)
     self.client.close()
-    self.client = newHttpClient()
+    self.client = newScrapingClient()
     self.enqueue_for_check(thread)
     return
 
@@ -238,7 +239,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 
   try:
     self.client.headers.del("If-Modified-Since")
-    let body = self.client.getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
+    let body = self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
     if body.len == 0:
       raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
@@ -256,7 +257,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     error(fmt"/{self.name}/ | scrape_thread(): Non-HTTP exception raised. Exception: {error}.")
     sleep(3000)
     self.client.close()
-    self.client = newHttpClient()
+    self.client = newScrapingClient()
     self.enqueue_for_check(thread)
     return
 
@@ -279,6 +280,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.download_file(op_post)
   
     notice(fmt"/{self.name}/ | Inserting Thread #{thread.num} ({posts.len} posts).")
+
     self.db.exec(sql"START TRANSACTION")
   
     when defined(USE_POSTGRES):
@@ -321,9 +323,10 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     var deleted_posts: seq[int] = @[]
     var new_posts: int = 0
 
-    let num = post{"no"}.getInt()
-    if num > 0:
-      api_posts.add(num)
+    for post in posts:
+      let num = post{"no"}.getInt()
+      if num > 0:
+        api_posts.add(num)
 
     for old_post in old_posts:
       if not(old_post in api_posts):
@@ -352,7 +355,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 proc scrape_archived_threads*(self: var Board) =
   info("Scraping the internal archives.")
   try:
-    var archive = parseJson(self.client.getContent(fmt"https://a.4cdn.org/{self.name}/archive.json"))
+    var archive = parseJson(self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/archive.json"))
     for thread in archive:
       let new_thread = Topic(num: thread.getInt(), posts: @[], last_modified: 0, queue_option: sEntire_Topic)
       self.enqueue_for_check(new_thread)
@@ -371,7 +374,7 @@ proc scrape*(self: var Board) =
   info(fmt"/{self.name}/ | Catalog | Checking for changes.")
   var response: Response
   try:
-    response = self.client.get(fmt"https://a.4cdn.org/{self.name}/threads.json")
+    response = self.client.cf_get(fmt"https://a.4cdn.org/{self.name}/threads.json")
     if response != nil and response.body != "":
       let catalog = parseJson(response.body)
       for page in catalog:
@@ -413,7 +416,7 @@ proc scrape*(self: var Board) =
     error(fmt"/{self.name}/ | scrape(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
     sleep(3000)
     self.client.close()
-    self.client = newHttpClient()
+    self.client = newScrapingClient()
     
   discard
 
@@ -429,7 +432,9 @@ proc poll_queue*(self: var Board) =
   else: 
     self.scrape()
 
+
 proc init*(self: var Board) =
+  self.client = newScrapingClient()
   html_purifier.compileRegex()
   self.create_board_table()
   self.create_sql_procedures()
