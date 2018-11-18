@@ -342,8 +342,8 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.db.exec(sql"START TRANSACTION")
 
     for post in posts:
-      let post_num = post["no"].getInt()
-      if not(post_num in old_posts):
+      let post_num = post{"no"}.getInt()
+      if post_num > 0 and not(post_num in old_posts):
         var postRef = newPost(post, thread.num)
         if postRef != nil and postRef.num > 0:
           self.insert_post(postRef)
@@ -400,7 +400,7 @@ proc scrape*(self: var Board) =
         if page.hasKey("threads"):
           let threads = page["threads"]
           for thread in threads:
-            let thread_num: int = thread["no"].getInt()
+            let thread_num: int = thread{"no"}.getInt()
             live_threads.add(thread_num)
       
             if not (thread_num in self.threads):
