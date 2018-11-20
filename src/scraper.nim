@@ -21,7 +21,8 @@ import html_purifier
 type Scrape_options = enum 
     sEntire_Topic,
     sUpdate_Topic,
-    sCheck_Status
+    sCheck_Status,
+    sEnding
 
 type 
   Board_Config* = ref object
@@ -118,6 +119,11 @@ proc newPost(jsonPost: JsonNode, thread_num: int): Post =
       file: media_file
     )
 
+proc end_scraping*(self:Board) =
+  self.scrape_queue.clear()
+  self.scrape_queue.addfirst(Topic(queue_option: sEnding))
+  notice(fmt"/{self.name}/ | Ending.")
+
 proc print_queue(self:Board): string =
   var new_thread, update_thread, status_thread: int = 0
   for t in self.scrape_queue:
@@ -128,6 +134,7 @@ proc print_queue(self:Board): string =
       inc update_thread:
     of sCheck_Status:
       inc status_thread
+    else: discard
 
   return fmt"(New: {new_thread}, Upd: {update_thread}, Chk: {status_thread})"
 
@@ -464,6 +471,9 @@ proc poll_queue*(self: var Board) =
       self.scrape_thread(first_thread)
     of sCheck_Status:
       self.check_thread_status(first_thread)
+    of sEnding: 
+      self.scrape_queue.addfirst(first_thread)
+      sleep(60000)
     else: discard
   else: 
     self.scrape()

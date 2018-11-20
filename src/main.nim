@@ -7,11 +7,36 @@ import httpclient, parsecfg, strutils, logging
 import scraper
 import file_downloader
 
-type BoardThread = tuple[logger: Logger, board: Board]
-type FileThread  = tuple[logger: Logger, file_dir: string]
+var con_logger: Logger
+var boards: seq[Board]
+type BoardThread = tuple[logger: Logger, board: ptr Board]
+type FileThread =  tuple[logger: Logger, file_dir: string]
 
-proc poll_board(brd: Board) {.async.} =
-  var board = brd
+proc on_quit() {.noconv.} =
+  when defined(windows):
+    setupForeignThreadGc()
+    addHandler(con_logger)
+
+  sleep(1000)
+  notice("Waiting for the file downloaders to finish their queue before shutting down.")
+  for i, _ in boards:
+    boards[i].end_scraping()
+
+  sleep(5000) # give the queue enough time to get populated.
+  
+  var remaining:int = file_channel.peek()
+  while remaining > 1:
+    remaining = file_channel.peek()
+    notice($remaining&" files remaining.")
+    sleep(2000)
+
+  sleep(5000) # in case the last file is still being downloaded.
+  notice("Bye!")
+  quit(1)
+
+
+proc poll_board(brd: ptr Board) {.async.} =
+  var board = brd[]
   let delay: int = board.config.api_cooldown
 
   while true:
@@ -21,7 +46,7 @@ proc poll_board(brd: Board) {.async.} =
 proc poll_board(data: BoardThread) {.thread.} =
   addHandler(data.logger)
 
-  var board = data.board
+  var board = data.board[]
   let delay: int = board.config.api_cooldown
 
   notice("/$1/ | Creating database tables and procedures." % board.name)
@@ -45,6 +70,7 @@ proc main() {.async.} =
     DB_USERNAME =       config.getSectionValue("Config", "DB_username")
     DB_PASSWORD =       config.getSectionValue("Config", "DB_password")
     DB_NAME =           config.getSectionValue("Config", "DB_database_name")
+    GRACEFUL_EXIT =     config.getSectionValue("Config", "Finish_queue_before_exit") == "true"
     FILE_DIRECTORY =    config.getSectionValue("Config", "File_Base_directory")
     FILE_THREADS  =     parseInt(config.getSectionValue("Config", "File_Download_Threads"))
     LOG_LEVEL =         config.getSectionValue("Config", "Logging_level").toLower()
@@ -52,8 +78,10 @@ proc main() {.async.} =
     MULTITHREADED =     config.getSectionValue("Config", "Multithreaded") == "true"
     RESTORE_STATE =     config.getSectionValue("Boards", "Restore_Previous_State") == "true"
 
+  if GRACEFUL_EXIT:
+    setControlCHook(on_quit)
 
-  let con_logger = newConsoleLogger(fmtStr = "$time | $levelname | ", 
+  con_logger = newConsoleLogger(fmtStr = "$time | $levelname | ", 
     levelThreshold = 
       if   LOG_LEVEL == "verbose": lvlInfo
       elif LOG_LEVEL == "notice":  lvlNotice
@@ -74,7 +102,6 @@ proc main() {.async.} =
 
   let db_conn = db_connect(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
 
-  var boards: seq[Board]
   for board in BOARDS_TO_ARCHIVE:
     let download_thumbs:bool = config.getSectionValue(board, "Download_thumbs") != "false"
     let download_images:bool = config.getSectionValue(board, "Download_images") == "true"
@@ -112,7 +139,7 @@ proc main() {.async.} =
       newSeq[Thread[BoardThread]](BOARDS_TO_ARCHIVE.len)
   
     for i, _ in board_threads:
-      createThread(board_threads[i], poll_board, (con_logger, boards[i]))
+      createThread(board_threads[i], poll_board, (con_logger, addr boards[i]))
       await sleepAsync(500)
 
     joinThreads(board_threads)
@@ -131,7 +158,7 @@ proc main() {.async.} =
     notice("Done. Now scraping.")
   
     for i, _ in boards:
-      asyncCheck poll_board(boards[i])
+      asyncCheck poll_board(addr boards[i])
       await sleepAsync(250)
 
 
