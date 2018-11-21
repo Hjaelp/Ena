@@ -63,6 +63,7 @@ proc cleanHTML*(html: string): string =
     result = result.replacef(reMath2, "[eqn]$1[/eqn]")
     result = result.replacef(reSpoiler, "[spoiler]$1[/spoiler]")
     result = result.replacef(reSpoiler2, "[spoiler]$1[/spoiler]")
+    result = result.replacef(reSJIS, "[sjis]$1[/sjis]")
     result = result.replace(reNewline, "\n")
     result = result.replace(reTags, "")
     result = sanitizeField(result)
