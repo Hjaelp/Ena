@@ -2,3 +2,5 @@ nimcache/
 config.ini
 FoolFuuka/
 *.exe
+*.log
+*.txt

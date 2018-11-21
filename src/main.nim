@@ -9,7 +9,7 @@ import file_downloader
 
 var con_logger: Logger
 var boards: seq[Board]
-type BoardThread = tuple[logger: Logger, board: ptr Board]
+type BoardThread = tuple[con_logger, file_logger: Logger, board: ptr Board]
 type FileThread =  tuple[logger: Logger, file_dir: string]
 
 proc on_quit() {.noconv.} =
@@ -44,7 +44,8 @@ proc poll_board(brd: ptr Board) {.async.} =
     await sleepasync(delay)
 
 proc poll_board(data: BoardThread) {.thread.} =
-  addHandler(data.logger)
+  addHandler(data.con_logger)
+  addHandler(data.file_logger)
 
   var board = data.board[]
   let delay: int = board.config.api_cooldown
@@ -87,8 +88,12 @@ proc main() {.async.} =
       elif LOG_LEVEL == "notice":  lvlNotice
       elif LOG_LEVEL == "error":   lvlError
       else: lvlNone)
+  let file_logger = newFileLogger("error.log", fmtStr = "$time | $levelname | ", 
+    levelThreshold = if con_logger.levelThreshold != lvlNone: lvlWarn
+                     else: lvlNone)
   
   addHandler(con_logger)
+  addHandler(file_logger)
 
 
   var file_dl_threads: seq[Thread[FileThread]] = 
@@ -139,7 +144,7 @@ proc main() {.async.} =
       newSeq[Thread[BoardThread]](BOARDS_TO_ARCHIVE.len)
   
     for i, _ in board_threads:
-      createThread(board_threads[i], poll_board, (con_logger, addr boards[i]))
+      createThread(board_threads[i], poll_board, (con_logger, file_logger, addr boards[i]))
       await sleepAsync(500)
 
     joinThreads(board_threads)
