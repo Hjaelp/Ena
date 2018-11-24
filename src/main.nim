@@ -9,7 +9,7 @@ import file_downloader
 
 var con_logger: Logger
 var boards: seq[Board]
-type BoardThread = tuple[con_logger, file_logger: Logger, board: ptr Board]
+type BoardThread = tuple[con_logger, file_logger: Logger, board: Board]
 type FileThread =  tuple[logger: Logger, file_dir: string]
 
 proc on_quit() {.noconv.} =
@@ -47,7 +47,7 @@ proc poll_board(data: BoardThread) {.thread.} =
   addHandler(data.con_logger)
   addHandler(data.file_logger)
 
-  var board = data.board[]
+  var board: Board = data.board
   let delay: int = board.config.api_cooldown
 
   notice("/$1/ | Creating database tables and procedures." % board.name)
@@ -82,6 +82,8 @@ proc main() {.async.} =
     THUMB_EXT     =   config.getSectionValue("Vichan", "Thumb_ext")
 
   if GRACEFUL_EXIT:
+    doAssert(MULTITHREADED == false, 
+      "Finish_queue_before_exit conflicts with Multithreaded operation.")
     setControlCHook(on_quit)
 
   con_logger = newConsoleLogger(fmtStr = "$time | $levelname | ", 
@@ -146,7 +148,7 @@ proc main() {.async.} =
       newSeq[Thread[BoardThread]](BOARDS_TO_ARCHIVE.len)
   
     for i, _ in board_threads:
-      createThread(board_threads[i], poll_board, (con_logger, file_logger, addr boards[i]))
+      createThread(board_threads[i], poll_board, (con_logger, file_logger, boards[i]))
       await sleepAsync(500)
 
     joinThreads(board_threads)
