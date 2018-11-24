@@ -15,24 +15,28 @@ type Downloader_Options* = enum
     dThumbnails,
     dAll_files
 
-type File_channel = Channel[tuple[previewfilename: string, orig_filename: string, board: string, mode: Downloader_Options]]
+type File_channel = Channel[tuple[preview_url: string, 
+                                  orig_url: string, 
+                                  preview_filename: string,
+                                  orig_filename: string,
+                                  board: string, 
+                                  mode: Downloader_Options]
+                           ]
 
 var file_channel*: File_channel
 file_channel.open()
-
-const IMAGE_CDN: string = "https://i.4cdn.org"
 
 proc fetch(self: var FileDownloader, file: tuple) =
   let subdir1: string = file.orig_filename.substr(0,3)
   let subdir2: string = file.orig_filename.substr(4,5)
 
-  let thumbUrl: string = fmt("{IMAGE_CDN}/{file.board}/{file.previewfilename}")
-  let thumbDestination: string = fmt("{self.file_dir}/{file.board}/thumb/{subdir1}/{subdir2}/{file.previewfilename}")
+  let thumbUrl: string = file.preview_url
+  let thumbDestination: string = fmt("{self.file_dir}/{file.board}/thumb/{subdir1}/{subdir2}/{file.preview_filename}")
   var imageUrl: string
   var imageDestination: string
 
   if file.mode == dAll_files:
-    imageUrl = fmt("{IMAGE_CDN}/{file.board}/{file.orig_filename}")
+    imageUrl = file.orig_url
     imageDestination = fmt("{self.file_dir}/{file.board}/image/{subdir1}/{subdir2}/{file.orig_filename}")
 
   if not existsDir(fmt"{self.file_dir}/{file.board}/image/{subdir1}/{subdir2}"):
@@ -40,7 +44,7 @@ proc fetch(self: var FileDownloader, file: tuple) =
     createDir(fmt"{self.file_dir}/{file.board}/image/{subdir1}/{subdir2}")
 
   try:
-    info("Downloading file: "&file.orig_filename)
+    #info("Downloading file: "&file.orig_filename)
     self.client.cf_downloadFile(thumbUrl, thumbDestination)
 
     if file.mode == dAll_files:

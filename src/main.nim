@@ -25,7 +25,7 @@ proc on_quit() {.noconv.} =
   sleep(5000) # give the queue enough time to get populated.
   
   var remaining:int = file_channel.peek()
-  while remaining > 1:
+  while remaining > 0:
     remaining = file_channel.peek()
     notice($remaining&" files remaining.")
     sleep(2000)
@@ -78,6 +78,8 @@ proc main() {.async.} =
     BOARDS_TO_ARCHIVE = config.getSectionValue("Boards", "Boards_to_archive").split(";")
     MULTITHREADED =     config.getSectionValue("Config", "Multithreaded") == "true"
     RESTORE_STATE =     config.getSectionValue("Boards", "Restore_Previous_State") == "true"
+    SITE_HOSTNAME =   config.getSectionValue("Vichan", "Site_Hostname")
+    THUMB_EXT     =   config.getSectionValue("Vichan", "Thumb_ext")
 
   if GRACEFUL_EXIT:
     setControlCHook(on_quit)
@@ -115,21 +117,21 @@ proc main() {.async.} =
     let board_api_cooldown:string = config.getSectionValue(board, "Time_between_requests")
 
     boards.add(
-      Board(
-        name: board, 
-        threads: initTable[int, Topic](), 
-        scrape_queue: initDeque[Topic](),
-        config: Board_Config(
+      newBoard(
+        site = SITE_HOSTNAME,
+        name = board, 
+        config = Board_Config(
           api_cooldown: if isDigit(board_api_cooldown): parseInt(board_api_cooldown)
             else: DEFAULT_COOLDOWN,
           file_options: if download_thumbs and download_images: dAll_files
                elif download_thumbs: dThumbnails
                else: dNo_files,
+          thumb_ext: THUMB_EXT,
           restore_state: RESTORE_STATE,
           scrape_archive: scrape_internal
 
         ),
-        db: if MULTITHREADED: db_connect(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
+        db = if MULTITHREADED: db_connect(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)
             else: db_conn,
       )
     )

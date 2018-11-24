@@ -4,11 +4,59 @@ description   = "Yet another imageboard dumper."
 license       = "MIT"
 
 task build_postgres, "Building w/ PostgreSQL support":
-  exec "nim c --d:ssl -d:release --threads:on --tlsemulation:off --define:USE_POSTGRES --o:ena src/main.nim"
-  exec "nim c --d:ssl -d:release --threads:on --tlsemulation:off --define:USE_POSTGRES --o:board_stats src/stats.nim"
-  setCommand "nop"
-  
+  switch("d", "ssl")
+  switch("d", "release")
+  switch("threads", "on")
+
+  when defined(windows):
+    switch("tlsemulation", "off")
+
+  switch("d", "USE_POSTGRES")
+
+  switch("o", "ena")
+
+  setCommand "c", "src/main.nim"
+
+
+task build_vichan_postgres, "Building w/ Vichan & PostgreSQL support":
+  switch("d", "ssl")
+  switch("d", "release")
+  switch("threads", "on")
+
+  when defined(windows):
+    switch("tlsemulation", "off")
+
+  switch("d", "USE_POSTGRES")
+  switch("d", "VICHAN")
+
+  switch("o", "ena")
+
+  setCommand "c", "src/main.nim"
+
+
 task build, "Building":
-  exec "nim c -d:ssl -d:release --threads:on --tlsemulation:off --o:ena src/main.nim"
-  exec "nim c -d:ssl -d:release --threads:on --tlsemulation:off --o:board_stats src/stats.nim"
-  setCommand "nop"
+  switch("d", "ssl")
+  switch("d", "release")
+  switch("threads", "on")
+  
+  when defined(windows):
+    switch("tlsemulation", "off")
+
+  switch("o", "ena")
+
+  setCommand "c", "src/main.nim"
+
+
+task build_vichan, "Building w/ Vichan support":
+  switch("d", "ssl")
+  switch("d", "release")
+  switch("threads", "on")
+
+  when defined(windows):
+    switch("tlsemulation", "off")
+
+  switch("d", "VICHAN")
+
+  switch("o", "ena")
+
+  setCommand "c", "src/main.nim"

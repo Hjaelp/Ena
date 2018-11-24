@@ -30,6 +30,11 @@ type
     file_options*: Downloader_Options
     restore_state*: bool
     scrape_archive*: bool
+    api_endpoint: string
+    api_threads_endpoint: string
+    image_loc: string
+    thumb_loc: string
+    thumb_ext*: string
 
   Board* = ref object
     api_lastmodified*: string
@@ -39,6 +44,7 @@ type
     threads*: Table[int, Topic]
     scrape_queue*: Deque[Topic]
     db*: DbConn
+
 
   Topic* = ref object
     num*: int
@@ -70,29 +76,47 @@ type
     fsize*: int
     hash*: string
     orig_filename*: string
-    previewfilename*: string
+    preview_filename*: string
     spoiler*: int
     exif*: string
     board*: string
 
 
-proc newPost(jsonPost: JsonNode, thread_num: int): Post =
+proc newPost(self: Board, jsonPost: JsonNode, thread_num: int): Post =
   var media_file: File
 
   if not jsonPost.hasKey("no"):
     return
-  
+
   if jsonPost.hasKey("filename"):
+    when defined(VICHAN):
+      let thumb_ext =
+        if self.config.thumb_ext.len > 0:
+          self.config.thumb_ext
+        else:
+          if jsonPost["ext"].getStr() notin [".webm",".mp4"]:
+            jsonPost["ext"].getStr() 
+          else:
+            ".jpg"
+
     media_file = File(
       filename: (jsonPost["filename"].getStr()&jsonPost["ext"].getStr()),
-      width: jsonPost["w"].getInt(),
-      height: jsonPost["h"].getInt(),
-      tn_width: jsonPost["tn_w"].getInt(),
-      tn_height: jsonPost["tn_h"].getInt(),
+      width: jsonPost{"w"}.getInt(),
+      height: jsonPost{"h"}.getInt(),
+      tn_width: jsonPost{"tn_w"}.getInt(),
+      tn_height: jsonPost{"tn_h"}.getInt(),
       fsize: jsonPost["fsize"].getInt(),
       hash: jsonPost{"md5"}.getStr(),
-      orig_filename: ($jsonPost["tim"].getInt()&jsonPost["ext"].getStr()),
-      previewfilename: ($jsonPost["tim"].getInt()&"s.jpg"),
+      orig_filename: 
+        when not defined(VICHAN): 
+          ($jsonPost["tim"].getInt()&jsonPost["ext"].getStr())
+        else:
+          ($jsonPost["tim"].getStr()&jsonPost["ext"].getStr()),
+      preview_filename: 
+        when not defined(VICHAN): 
+          ($jsonPost["tim"].getInt()&"s.jpg")
+        else:
+          ($jsonPost["tim"].getStr()&thumb_ext),
       spoiler: jsonPost{"spoiler"}.getInt()
     )
   
@@ -162,11 +186,20 @@ proc download_file(self: Board, post: Post) =
   if post.file.hash != "":
     let old_file = self.media_file_exists(post.file.hash)
     if old_file[0] == "":
-      file_channel.send((previewfilename: post.file.previewfilename, orig_filename: post.file.orig_filename, board: self.name, mode: self.config.file_options))
+      file_channel.send(
+        (
+          preview_url: self.config.thumb_loc&"/"&post.file.preview_filename, 
+          orig_url: self.config.image_loc&"/"&post.file.orig_filename,
+          preview_filename: post.file.preview_filename,
+          orig_filename: post.file.orig_filename,
+          board: self.name,
+          mode: self.config.file_options
+        )
+      )
     else: 
       #info(fmt"Ignoring filename {post.file.orig_filename} because hash already exists.")
       post.file.orig_filename = old_file[0]
-      post.file.previewfilename = old_file[1]
+      post.file.preview_filename = old_file[1]
 
 proc enqueue_for_check(self: var Board, thread: Topic) =
   self.scrape_queue.addLast(thread)
@@ -181,7 +214,7 @@ proc insert_post(self: Board, post: Post) =
       deleted, capcode, email, name, trip, title, comment,
       sticky, locked, poster_hash, poster_country, exif) 
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING"""),
-      0,0,post.num, 0, post.parent, 0, post.time, 0, post.file.previewfilename, post.file.tn_width, post.file.tn_height,
+      0,0,post.num, 0, post.parent, 0, post.time, 0, post.file.preview_filename, post.file.tn_width, post.file.tn_height,
       post.file.filename, post.file.width, post.file.height, post.file.fsize, post.file.hash, post.file.orig_filename, post.file.spoiler,
       0, post.capcode, "", post.name, post.trip, post.subject, post.comment, post.sticky, post.locked, 
       post.poster_hash, post.country, post.file.exif
@@ -193,7 +226,7 @@ proc insert_post(self: Board, post: Post) =
       deleted, capcode, email, name, trip, title, comment,
       sticky, locked, poster_hash, poster_country, exif) 
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""),
-      0,0,post.num, 0, post.parent, 0, post.time, 0, post.file.previewfilename, post.file.tn_width, post.file.tn_height,
+      0,0,post.num, 0, post.parent, 0, post.time, 0, post.file.preview_filename, post.file.tn_width, post.file.tn_height,
       post.file.filename, post.file.width, post.file.height, post.file.fsize, post.file.hash, post.file.orig_filename, post.file.spoiler,
       0, post.capcode, "", post.name, post.trip, post.subject, post.comment, post.sticky, post.locked, 
       post.poster_hash, post.country, post.file.exif
@@ -230,7 +263,7 @@ proc check_thread_status(self: var Board, thread: var Topic) =
   var status: JsonNode
   try:
     self.client.headers.del("If-Modified-Since")
-    let body = self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
+    let body = self.client.cf_getContent(fmt"{self.config.api_threads_endpoint}/{thread.num}.json")
     if body.len == 0:
       raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
@@ -263,7 +296,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
 
   try:
     self.client.headers.del("If-Modified-Since")
-    let body = self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/thread/{thread.num}.json")
+    let body = self.client.cf_getContent(fmt"{self.config.api_threads_endpoint}/{thread.num}.json")
     if body.len == 0:
       raise newException(JsonParsingError, fmt"Received empty body for Thread #{thread.num}")
 
@@ -285,13 +318,16 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     self.enqueue_for_check(thread)
     return
 
-  posts = posts{"posts"}
+  if not posts.hasKey("posts"):
+    return
+
+  posts = posts["posts"]
   let queue_option = thread.queue_option
 
   if queue_option == sEntire_Topic:
     let archived_timestamp: int = posts[0]{"archived_on"}.getInt()
 
-    var op_post: Post = newPost(posts[0], thread.num)
+    var op_post: Post = self.newPost(posts[0], thread.num)
 
     if op_post == nil:
       error(fmt"/{self.name}/ | OP post of {thread.num} doesn't exist. Discarding.")
@@ -314,7 +350,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
         deleted, capcode, email, name, trip, title, comment,
         sticky, locked, poster_hash, poster_country, exif) 
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING"""),
-        0,0,op_post.num, 0, op_post.num, 1, op_post.time, archived_timestamp, op_post.file.previewfilename, op_post.file.tn_width, 
+        0,0,op_post.num, 0, op_post.num, 1, op_post.time, archived_timestamp, op_post.file.preview_filename, op_post.file.tn_width, 
         op_post.file.tn_height, op_post.file.filename, op_post.file.width, op_post.file.height, op_post.file.fsize, op_post.file.hash, 
         op_post.file.orig_filename, op_post.file.spoiler, 0, op_post.capcode, "", op_post.name, op_post.trip, op_post.subject, 
         op_post.comment, op_post.sticky, op_post.locked, op_post.poster_hash, op_post.country, op_post.file.exif
@@ -326,14 +362,14 @@ proc scrape_thread(self: var Board, thread: var Topic) =
         deleted, capcode, email, name, trip, title, comment,
         sticky, locked, poster_hash, poster_country, exif) 
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""),
-        0,0,op_post.num, 0, op_post.num, 1, op_post.time, archived_timestamp, op_post.file.previewfilename, op_post.file.tn_width, 
+        0,0,op_post.num, 0, op_post.num, 1, op_post.time, archived_timestamp, op_post.file.preview_filename, op_post.file.tn_width, 
         op_post.file.tn_height, op_post.file.filename, op_post.file.width, op_post.file.height, op_post.file.fsize, op_post.file.hash, 
         op_post.file.orig_filename, op_post.file.spoiler, 0, op_post.capcode, "", op_post.name, op_post.trip, op_post.subject, 
         op_post.comment, op_post.sticky, op_post.locked, op_post.poster_hash, op_post.country, op_post.file.exif
       )
   
     for i in 0..<posts.len:
-      let post = newPost(posts[i], thread.num)
+      let post = self.newPost(posts[i], thread.num)
       if post != nil and post.num > 0:
         thread.posts.add(post.num)
         self.insert_post(post)
@@ -364,7 +400,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     for post in posts:
       let post_num = post{"no"}.getInt()
       if post_num > 0 and not(post_num in old_posts):
-        var postRef = newPost(post, thread.num)
+        var postRef = self.newPost(post, thread.num)
         if postRef != nil and postRef.num > 0:
           self.insert_post(postRef)
           thread.posts.add(post_num)
@@ -398,7 +434,7 @@ proc add_previous_threads(self: Board) =
 proc scrape_archived_threads*(self: var Board) =
   info("Scraping the internal archives.")
   try:
-    var archive = parseJson(self.client.cf_getContent(fmt"https://a.4cdn.org/{self.name}/archive.json"))
+    var archive = parseJson(self.client.cf_getContent(fmt"{self.config.api_endpoint}/archive.json"))
     for thread in archive:
       let new_thread = Topic(num: thread.getInt(), posts: @[], last_modified: 0, queue_option: sEntire_Topic)
       self.enqueue_for_check(new_thread)
@@ -417,7 +453,7 @@ proc scrape*(self: var Board) =
   info(fmt"/{self.name}/ {print_queue(self)} | Catalog | Checking for changes.")
   var response: Response
   try:
-    response = self.client.cf_get(fmt"https://a.4cdn.org/{self.name}/threads.json")
+    response = self.client.cf_get(fmt"{self.config.api_endpoint}/threads.json")
     if response != nil and response.body != "":
       let catalog = parseJson(response.body)
       for page in catalog:
@@ -445,7 +481,9 @@ proc scrape*(self: var Board) =
           var threadRef = self.threads[thread]
           threadRef.queue_option = sCheck_Status
           self.enqueue_for_check(threadRef)
-      self.api_lastmodified = response.headers["last-modified"]
+
+      if response.headers.hasKey("last-modified"):
+        self.api_lastmodified = response.headers["last-modified"]
 
     elif response.status == "304 Not Modified":
       info(fmt"/{self.name}/ | scrape(): Catalog has not been modified.")
@@ -457,11 +495,37 @@ proc scrape*(self: var Board) =
     error(fmt"/{self.name}/ | scrape(): HTTP Error: {getCurrentExceptionMsg()}")
   except:
     error(fmt"/{self.name}/ | scrape(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
-    sleep(3000)
     self.client.close()
     self.client = newScrapingClient()
     
   discard
+
+
+proc newBoard*(site: string, name: string, config: Board_Config, db: DbConn): Board =
+  new result
+  when not defined(VICHAN):
+    result.config = config
+    result.config.api_endpoint = "https://a.4cdn.org/"&name
+    result.config.api_threads_endpoint = "https://a.4cdn.org/"&name&"/thread"
+    result.config.image_loc = "https://i.4cdn.org/"&name
+    result.config.thumb_loc = "https://i.4cdn.org/"&name
+
+  else:
+    result.config = config
+    result.config.api_endpoint = "https://"&site&"/"&name
+    result.config.api_threads_endpoint = "https://"&site&"/"&name&"/res"
+
+    if site == "8ch.net":
+      result.config.image_loc = "https://media.8ch.net/file_store"
+      result.config.thumb_loc = "https://media.8ch.net/file_store/thumb"
+    else:
+      result.config.image_loc = "https://"&site&"/"&name&"/src"
+      result.config.thumb_loc = "https://"&site&"/"&name&"/thumb"
+
+  result.name = name
+  result.threads = initTable[int, Topic]()
+  result.scrape_queue = initDeque[Topic]()
+  result.db = db
 
 proc poll_queue*(self: var Board) =
   if (self.scrape_queue.len > 0):

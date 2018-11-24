@@ -25,7 +25,7 @@ proc getCookieString(cookies: StringTableRef): string =
       else:
           result = "$2=$3" % [result, c, v]
 
-proc setCookie(client: var HttpClient, cookie: string) =
+proc setCookie(client: HttpClient, cookie: string) =
   if cookie.len == 0: return
 
   if client.headers.hasKey("cookie") and 
@@ -45,7 +45,7 @@ proc setCookie(client: var HttpClient, cookie: string) =
     client.headers["cookie"] = cookie
 
 
-proc setCookie(client: var HttpClient, response: Response) =
+proc setCookie(client: HttpClient, response: Response) =
   var headers = response.headers
   
   if not headers.hasKey("set-cookie"):
@@ -75,7 +75,7 @@ proc is_challenge*(resp: Response): bool =
            "jschl" in resp.body and 
            "jschl_answer" in resp.body
 
-proc cf_solve(client: var HttpClient, resp: Response, url: string): Response =
+proc cf_solve(client: HttpClient, resp: Response, url: string): Response =
   var body = resp.body
   var matches: array[1, string]
   var jschl_vc, pass, js: string
@@ -133,7 +133,7 @@ proc cf_solve(client: var HttpClient, resp: Response, url: string): Response =
   else:
     result = redirect
 
-proc cf_get*(client: var HttpClient, url: string): Response =
+proc cf_get*(client: HttpClient, url: string): Response =
   withLock headerLock:
     client.headers["cookie"] = headerPtr.cookie
     result = client.request(url, HttpGET)
@@ -145,11 +145,11 @@ proc cf_get*(client: var HttpClient, url: string): Response =
     return result
   
   elif is_challenge(result):
-    notice("Ran into a cloudflare JS challenge.")
+    warn("Ran into a cloudflare JS challenge.")
     withLock headerLock:
       result = client.cf_solve(result, url)
 
-proc cf_getContent*(client: var HttpClient, url: string): string =
+proc cf_getContent*(client: HttpClient, url: string): string =
   let resp = cf_get(client, url)
 
   if resp.code.is4xx or resp.code.is5xx:
@@ -157,7 +157,7 @@ proc cf_getContent*(client: var HttpClient, url: string): string =
   else:
     return resp.body
 
-proc cf_downloadFile*(client: var HttpClient, url: string, filename: string) =
+proc cf_downloadFile*(client: HttpClient, url: string, filename: string) =
   var f: File
   let body = client.cf_getContent(url)
 
@@ -171,5 +171,5 @@ proc cf_downloadFile*(client: var HttpClient, url: string, filename: string) =
 proc newScrapingClient*(userAgent = defUserAgent, 
       headers = newHttpHeaders()): HttpClient =
 
-  result = newHttpClient("Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0", maxRedirects = 0)
+  result = newHttpClient("Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0", timeout = 10_000, maxRedirects = 0)
   result.headers = headers

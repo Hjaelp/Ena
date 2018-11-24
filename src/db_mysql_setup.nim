@@ -20,7 +20,7 @@ proc create_tables*(board_name: string, db: DbConn) =
     `op` bool NOT NULL DEFAULT '0',
     `timestamp` int unsigned NOT NULL,
     `timestamp_expired` int unsigned NOT NULL,
-    `preview_orig` varchar(20),
+    `preview_orig` varchar(72),
     `preview_w` smallint unsigned NOT NULL DEFAULT '0',
     `preview_h` smallint unsigned NOT NULL DEFAULT '0',
     `media_filename` text,
@@ -28,7 +28,7 @@ proc create_tables*(board_name: string, db: DbConn) =
     `media_h` smallint unsigned NOT NULL DEFAULT '0',
     `media_size` int unsigned NOT NULL DEFAULT '0',
     `media_hash` varchar(25),
-    `media_orig` varchar(20),
+    `media_orig` varchar(72),
     `spoiler` bool NOT NULL DEFAULT '0',
     `deleted` bool NOT NULL DEFAULT '0',
     `capcode` varchar(1) NOT NULL DEFAULT 'N',
@@ -99,9 +99,9 @@ proc create_tables*(board_name: string, db: DbConn) =
   db.exec(sql(fmt"""CREATE TABLE IF NOT EXISTS `{board_name}_images` (
     `media_id` int unsigned NOT NULL auto_increment,
     `media_hash` varchar(25) NOT NULL,
-    `media` varchar(20),
-    `preview_op` varchar(20),
-    `preview_reply` varchar(20),
+    `media` varchar(72),
+    `preview_op` varchar(72),
+    `preview_reply` varchar(72),
     `total` int(10) unsigned NOT NULL DEFAULT '0',
     `banned` smallint unsigned NOT NULL DEFAULT '0',
   
@@ -200,7 +200,7 @@ proc create_procedures*(board_name: string, db: DbConn) =
   
   
   db.exec(sql(fmt"""CREATE PROCEDURE `insert_image_{board_name}` (n_media_hash VARCHAR(25),
-   n_media VARCHAR(20), n_preview VARCHAR(20), n_op INT)
+   n_media VARCHAR(72), n_preview VARCHAR(72), n_op INT)
   BEGIN
     IF n_op = 1 THEN
       INSERT INTO `{board_name}_images` (media_hash, media, preview_op, total)
