@@ -27,8 +27,8 @@ var file_channel*: File_channel
 file_channel.open()
 
 proc fetch(self: var FileDownloader, file: tuple) =
-  let subdir1: string = file.orig_filename.substr(0,3)
-  let subdir2: string = file.orig_filename.substr(4,5)
+  let subdir1: string = file.preview_filename.substr(0,3)
+  let subdir2: string = file.preview_filename.substr(4,5)
 
   let thumbUrl: string = file.preview_url
   let thumbDestination: string = fmt("{self.file_dir}/{file.board}/thumb/{subdir1}/{subdir2}/{file.preview_filename}")

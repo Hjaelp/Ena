@@ -168,23 +168,31 @@ proc create_board_table*(self: Board) =
 proc create_sql_procedures*(self: Board) =
   create_procedures(self.name, self.db)
 
-proc media_file_exists(self: Board, hash: string): array[0..1, string] =
+proc media_file_exists(self: Board, hash: string, op: bool): array[0..1, string] =
+  var row: seq[Row]
+
   when defined(USE_POSTGRES):
-    var row = self.db.getAllRows(sql(&"SELECT media, coalesce(preview_reply, preview_op, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
+    if op:
+      row = self.db.getAllRows(sql(&"SELECT media, coalesce(preview_op, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
+    else:
+      row = self.db.getAllRows(sql(&"SELECT media, coalesce(preview_op, preview_reply, '') FROM \"{self.name}_images\" WHERE media_hash = ? limit 1"), hash)
   else:
-    var row = self.db.getAllRows(sql(fmt"SELECT media, coalesce(preview_reply, preview_op, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
+    if op:
+      row = self.db.getAllRows(sql(fmt"SELECT media, coalesce(preview_op, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
+    else:
+      row = self.db.getAllRows(sql(fmt"SELECT media, coalesce(preview_op, preview_reply, '') FROM `{self.name}_images` WHERE media_hash = ? limit 1"), hash)
 
   if row.len > 0:
     result = [row[0][0], row[0][1]]
   else:
     result = ["", ""]
 
-proc download_file(self: Board, post: Post) =
+proc download_file(self: Board, post: Post, is_op: bool = false) =
   if self.config.file_options == dNo_files:
     return
 
   if post.file.hash != "":
-    let old_file = self.media_file_exists(post.file.hash)
+    let old_file = self.media_file_exists(post.file.hash, is_op)
     if old_file[0] == "":
       file_channel.send(
         (
@@ -196,6 +204,18 @@ proc download_file(self: Board, post: Post) =
           mode: self.config.file_options
         )
       )
+    elif old_file[1] == "":
+      file_channel.send(
+        (
+          preview_url: self.config.thumb_loc&"/"&post.file.preview_filename, 
+          orig_url: "",
+          preview_filename: post.file.preview_filename,
+          orig_filename: "",
+          board: self.name,
+          mode: dThumbnails
+        )
+      )
+      post.file.orig_filename = old_file[0]
     else: 
       #info(fmt"Ignoring filename {post.file.orig_filename} because hash already exists.")
       post.file.orig_filename = old_file[0]
@@ -337,7 +357,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     if op_post.locked == 1 and archived_timestamp > 0:
       op_post.locked = 0
 
-    self.download_file(op_post)
+    self.download_file(op_post, true)
   
     notice(fmt"/{self.name}/ {print_queue(self)} | Inserting Thread #{thread.num} ({posts.len} posts).")
 
