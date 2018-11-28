@@ -325,6 +325,10 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     let error = getCurrentExceptionMsg()
     if error.split(" ")[0] == "404":
       return
+    elif error.split(" ")[0] == "500":
+      self.client.close()
+      self.client = newScrapingClient()
+      self.enqueue_for_check(thread)
     else:
       error(fmt"/{self.name}/ | scrape_thread(): Received Exception: {getCurrentExceptionMsg()}.")
       self.enqueue_for_check(thread)
