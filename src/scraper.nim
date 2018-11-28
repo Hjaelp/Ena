@@ -440,10 +440,31 @@ proc add_previous_threads(self: Board) =
   var i = 0
 
   when defined(USE_POSTGRES):
-    let stmt = sql(&"SELECT thread_num, STRING_AGG(num::character VARYING, ',' ORDER BY num asc), MAX(timestamp) AS highest FROM \"{self.name}\" GROUP BY thread_num ORDER BY highest DESC LIMIT 150")
+    let stmt = sql(fmt"""SELECT t1.thread_num,
+                                STRING_AGG(t1.num::character VARYING, ','),
+                                MAX(t1.TIMESTAMP) AS highest
+                         FROM "{self.name}" t1
+                         RIGHT JOIN
+                             (SELECT thread_num
+                              FROM "{self.name}_threads"
+                              ORDER BY time_bump DESC
+                              LIMIT 150) t2 ON t2.thread_num = t1.thread_num
+                         GROUP BY t1.thread_num
+                         LIMIT 150""")
+
   else:
     self.db.exec(sql"SET SESSION group_concat_max_len = 65536")
-    let stmt = sql(fmt"SELECT thread_num, GROUP_CONCAT(num), MAX(timestamp) AS highest FROM `{self.name}` GROUP BY thread_num order BY highest DESC LIMIT 150")
+    let stmt = sql(fmt"""SELECT t1.thread_num,
+                              GROUP_CONCAT(t1.num),
+                              MAX(t1.TIMESTAMP) AS highest
+                       FROM `{self.name}` t1
+                       RIGHT JOIN
+                           (SELECT thread_num
+                            FROM `{self.name}_threads`
+                            ORDER BY time_bump DESC
+                            LIMIT 150) t2 ON t2.thread_num = t1.thread_num
+                       GROUP BY thread_num
+                       LIMIT 150""")
 
   for row in self.db.fastRows(stmt):
     let thread_num = parseInt(row[0])
