@@ -444,13 +444,12 @@ proc add_previous_threads(self: Board) =
                                 STRING_AGG(t1.num::character VARYING, ','),
                                 MAX(t1.TIMESTAMP) AS highest
                          FROM "{self.name}" t1
-                         RIGHT JOIN
+                         INNER JOIN
                              (SELECT thread_num
                               FROM "{self.name}_threads"
                               ORDER BY time_bump DESC
                               LIMIT 150) t2 ON t2.thread_num = t1.thread_num
-                         GROUP BY t1.thread_num
-                         LIMIT 150""")
+                         GROUP BY t1.thread_num""")
 
   else:
     self.db.exec(sql"SET SESSION group_concat_max_len = 65536")
@@ -458,13 +457,12 @@ proc add_previous_threads(self: Board) =
                               GROUP_CONCAT(t1.num),
                               MAX(t1.TIMESTAMP) AS highest
                        FROM `{self.name}` t1
-                       RIGHT JOIN
+                       INNER JOIN
                            (SELECT thread_num
                             FROM `{self.name}_threads`
                             ORDER BY time_bump DESC
                             LIMIT 150) t2 ON t2.thread_num = t1.thread_num
-                       GROUP BY thread_num
-                       LIMIT 150""")
+                       GROUP BY thread_num""")
 
   for row in self.db.fastRows(stmt):
     let thread_num = parseInt(row[0])
