@@ -13,11 +13,11 @@ task build_postgres, "Building w/ PostgreSQL support":
 
   switch("d", "USE_POSTGRES")
 
+  exec "nim c --o:board_stats src/stats.nim"
+
   switch("o", "ena")
   setCommand "c", "src/main.nim"
 
-  switch("o", "board_stats")
-  setCommand "c", "src/stats.nim"
 
 
 task build_vichan_postgres, "Building w/ Vichan & PostgreSQL support":
@@ -31,11 +31,11 @@ task build_vichan_postgres, "Building w/ Vichan & PostgreSQL support":
   switch("d", "USE_POSTGRES")
   switch("d", "VICHAN")
 
+  exec "nim c --o:board_stats src/stats.nim"
+
   switch("o", "ena")
   setCommand "c", "src/main.nim"
 
-  switch("o", "board_stats")
-  setCommand "c", "src/stats.nim"
 
 
 task build, "Building":
@@ -46,11 +46,11 @@ task build, "Building":
   when defined(windows):
     switch("tlsemulation", "off")
 
+  exec "nim c --o:board_stats src/stats.nim"
+
   switch("o", "ena")
   setCommand "c", "src/main.nim"
 
-  switch("o", "board_stats")
-  setCommand "c", "src/stats.nim"
 
 
 task build_vichan, "Building w/ Vichan support":
@@ -63,8 +63,8 @@ task build_vichan, "Building w/ Vichan support":
 
   switch("d", "VICHAN")
 
+  exec "nim c --o:board_stats src/stats.nim"
+
   switch("o", "ena")
   setCommand "c", "src/main.nim"
 
-  switch("o", "board_stats")
-  setCommand "c", "src/stats.nim"
