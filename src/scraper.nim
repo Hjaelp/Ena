@@ -139,7 +139,11 @@ proc newPost(self: Board, jsonPost: JsonNode, thread_num: int): Post =
       sticky: jsonPost{"sticky"}.getInt(),
       locked: jsonPost{"closed"}.getInt(),
       poster_hash: jsonPost{"id"}.getStr(),
-      country: jsonPost{"country"}.getStr(),
+      country:  if jsonPost.hasKey("country_name"):
+                  if jsonPost.hasKey("country"):
+                    jsonPost["country"].getStr()
+                  else: jsonPost{"troll_country"}.getStr().toLower()
+                else: "",
       file: media_file
     )
 
