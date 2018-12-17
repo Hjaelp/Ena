@@ -179,8 +179,8 @@ proc create_procedures*(board_name: string, db: DbConn) =
             re.thread_num = tnum
         ),
         op.nimages = (
-          SELECT COUNT(media_hash) FROM `{board_name}` re FORCE INDEX(thread_num_subnum_index) WHERE
-            re.thread_num = tnum
+          SELECT COUNT(*) FROM `{board_name}` re FORCE INDEX(thread_num_subnum_index) WHERE
+            re.thread_num = tnum AND media_hash > ' '
         )
         WHERE op.thread_num = tnum;
     END;"""))

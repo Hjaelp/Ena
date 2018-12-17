@@ -180,8 +180,8 @@ proc create_procedures*(board_name: string, db: DbConn) =
           re.thread_num = $1.thread_num
       ),
       nimages = (
-        SELECT COUNT(media_hash) FROM "{board_name}" re WHERE
-          re.thread_num = $1.thread_num
+        SELECT COUNT(*) FROM "{board_name}" re WHERE
+          re.thread_num = $1.thread_num AND media_hash > ' '
       )
       WHERE op.thread_num = $1.thread_num;
   END; 
