@@ -66,6 +66,7 @@ type
     poster_hash*: string
     country*: string
     file*: File
+    extra_files*: seq[File]
 
   File* = ref object
     filename*: string
@@ -81,45 +82,56 @@ type
     exif*: string
     board*: string
 
+proc newMediaFile (self: Board, jsonPost: JsonNode): File =
+  let thumb_ext =
+    when defined(VICHAN):
+      if self.config.thumb_ext.len > 0:
+        self.config.thumb_ext
+      else:
+        if jsonPost["ext"].getStr() notin [".webm",".mp4"]:
+          jsonPost["ext"].getStr() 
+        else:
+          ".jpg"
+    else:
+      ".jpg"
+
+  return File(
+    filename: (jsonPost["filename"].getStr()&jsonPost["ext"].getStr()),
+    width: jsonPost{"w"}.getInt(),
+    height: jsonPost{"h"}.getInt(),
+    tn_width: jsonPost{"tn_w"}.getInt(),
+    tn_height: jsonPost{"tn_h"}.getInt(),
+    fsize: jsonPost["fsize"].getInt(),
+    hash: jsonPost{"md5"}.getStr(),
+    orig_filename: 
+      when not defined(VICHAN): 
+        ($jsonPost["tim"].getInt()&jsonPost["ext"].getStr())
+      else:
+        ($jsonPost["tim"].getStr()&jsonPost["ext"].getStr()),
+    preview_filename: 
+      when not defined(VICHAN): 
+        ($jsonPost["tim"].getInt()&"s.jpg")
+      else:
+        ($jsonPost["tim"].getStr()&thumb_ext),
+    spoiler: jsonPost{"spoiler"}.getInt()
+  )
 
 proc newPost(self: Board, jsonPost: JsonNode, thread_num: int): Post =
   var media_file: File
+  var extra_files: seq[File]
 
   if not jsonPost.hasKey("no"):
     return
 
   if jsonPost.hasKey("filename"):
-    when defined(VICHAN):
-      let thumb_ext =
-        if self.config.thumb_ext.len > 0:
-          self.config.thumb_ext
-        else:
-          if jsonPost["ext"].getStr() notin [".webm",".mp4"]:
-            jsonPost["ext"].getStr() 
-          else:
-            ".jpg"
+    media_file = self.newMediaFile(jsonPost)
 
-    media_file = File(
-      filename: (jsonPost["filename"].getStr()&jsonPost["ext"].getStr()),
-      width: jsonPost{"w"}.getInt(),
-      height: jsonPost{"h"}.getInt(),
-      tn_width: jsonPost{"tn_w"}.getInt(),
-      tn_height: jsonPost{"tn_h"}.getInt(),
-      fsize: jsonPost["fsize"].getInt(),
-      hash: jsonPost{"md5"}.getStr(),
-      orig_filename: 
-        when not defined(VICHAN): 
-          ($jsonPost["tim"].getInt()&jsonPost["ext"].getStr())
-        else:
-          ($jsonPost["tim"].getStr()&jsonPost["ext"].getStr()),
-      preview_filename: 
-        when not defined(VICHAN): 
-          ($jsonPost["tim"].getInt()&"s.jpg")
-        else:
-          ($jsonPost["tim"].getStr()&thumb_ext),
-      spoiler: jsonPost{"spoiler"}.getInt()
-    )
-  
+    when defined(VICHAN):
+      if jsonPost.hasKey("extra_files"):
+        for f in jsonPost["extra_files"]:
+          let extra_file = self.newMediaFile(f)
+          extra_files.add(extra_file)
+
   else:
     media_file = File()
 
@@ -144,7 +156,8 @@ proc newPost(self: Board, jsonPost: JsonNode, thread_num: int): Post =
                     jsonPost["country"].getStr()
                   else: jsonPost{"troll_country"}.getStr().toLower()
                 else: "",
-      file: media_file
+      file: media_file,
+      extra_files: extra_files
     )
 
 proc end_scraping*(self:Board) =
@@ -191,19 +204,19 @@ proc media_file_exists(self: Board, hash: string, op: bool): array[0..1, string]
   else:
     result = ["", ""]
 
-proc download_file(self: Board, post: Post, is_op: bool = false) =
+proc download_file(self: Board, file: File, is_op: bool = false) =
   if self.config.file_options == dNo_files:
     return
 
-  if post.file.hash != "":
-    let old_file = self.media_file_exists(post.file.hash, is_op)
+  if file.hash != "":
+    let old_file = self.media_file_exists(file.hash, is_op)
     if old_file[0] == "":
       file_channel.send(
         (
-          preview_url: self.config.thumb_loc&"/"&post.file.preview_filename, 
-          orig_url: self.config.image_loc&"/"&post.file.orig_filename,
-          preview_filename: post.file.preview_filename,
-          orig_filename: post.file.orig_filename,
+          preview_url: self.config.thumb_loc&"/"&file.preview_filename, 
+          orig_url: self.config.image_loc&"/"&file.orig_filename,
+          preview_filename: file.preview_filename,
+          orig_filename: file.orig_filename,
           board: self.name,
           mode: self.config.file_options
         )
@@ -211,25 +224,25 @@ proc download_file(self: Board, post: Post, is_op: bool = false) =
     elif old_file[1] == "":
       file_channel.send(
         (
-          preview_url: self.config.thumb_loc&"/"&post.file.preview_filename, 
+          preview_url: self.config.thumb_loc&"/"&file.preview_filename, 
           orig_url: "",
-          preview_filename: post.file.preview_filename,
+          preview_filename: file.preview_filename,
           orig_filename: "",
           board: self.name,
           mode: dThumbnails
         )
       )
-      post.file.orig_filename = old_file[0]
+      file.orig_filename = old_file[0]
     else: 
-      #info(fmt"Ignoring filename {post.file.orig_filename} because hash already exists.")
-      post.file.orig_filename = old_file[0]
-      post.file.preview_filename = old_file[1]
+      #info(fmt"Ignoring filename {file.orig_filename} because hash already exists.")
+      file.orig_filename = old_file[0]
+      file.preview_filename = old_file[1]
 
 proc enqueue_for_check(self: var Board, thread: Topic) =
   self.scrape_queue.addLast(thread)
 
 proc insert_post(self: Board, post: Post) =
-  self.download_file(post)
+  self.download_file(post.file)
 
   when defined(USE_POSTGRES):
     self.db.exec(sql(fmt"""INSERT INTO "{self.name}" (media_id, poster_ip, num, subnum, thread_num, 
@@ -365,7 +378,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     if op_post.locked == 1 and archived_timestamp > 0:
       op_post.locked = 0
 
-    self.download_file(op_post, true)
+    self.download_file(op_post.file, true)
   
     notice(fmt"/{self.name}/ {print_queue(self)} | Inserting Thread #{thread.num} ({posts.len} posts).")
 
