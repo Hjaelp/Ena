@@ -311,6 +311,8 @@ proc check_thread_status(self: var Board, thread: var Topic) =
       self.set_thread_deleted(thread.num)
     else:
       error(fmt"/{self.name}/ | check_thread_status(): Received HTTP error: {error}.")
+      self.client.close()
+      self.client = newScrapingClient()
       self.enqueue_for_check(thread)
     return
   except:
