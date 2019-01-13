@@ -311,15 +311,13 @@ proc check_thread_status(self: var Board, thread: var Topic) =
       self.set_thread_deleted(thread.num)
     else:
       error(fmt"/{self.name}/ | check_thread_status(): Received HTTP error: {error}.")
-      self.client.close()
-      self.client = newScrapingClient()
+      self.client.restart()
       self.enqueue_for_check(thread)
     return
   except:
     error(fmt"/{self.name}/ | check_thread_status(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
     sleep(3000)
-    self.client.close()
-    self.client = newScrapingClient()
+    self.client.restart()
     self.enqueue_for_check(thread)
     return
 
@@ -345,8 +343,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     if error.split(" ")[0] == "404":
       return
     elif error.split(" ")[0] == "500":
-      self.client.close()
-      self.client = newScrapingClient()
+      self.client.restart()
       self.enqueue_for_check(thread)
     else:
       error(fmt"/{self.name}/ | scrape_thread(): Received Exception: {getCurrentExceptionMsg()}.")
@@ -356,8 +353,7 @@ proc scrape_thread(self: var Board, thread: var Topic) =
     let error = getCurrentExceptionMsg()
     error(fmt"/{self.name}/ | scrape_thread(): Non-HTTP exception raised. Exception: {error}.")
     sleep(3000)
-    self.client.close()
-    self.client = newScrapingClient()
+    self.client.restart()
     self.enqueue_for_check(thread)
     return
 
@@ -557,8 +553,7 @@ proc scrape*(self: var Board) =
     error(fmt"/{self.name}/ | scrape(): HTTP Error: {getCurrentExceptionMsg()}")
   except:
     error(fmt"/{self.name}/ | scrape(): Non-HTTP exception raised. Exception: {getCurrentExceptionMsg()}.")
-    self.client.close()
-    self.client = newScrapingClient()
+    self.client.restart()
     
   discard
 

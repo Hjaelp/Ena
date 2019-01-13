@@ -167,9 +167,16 @@ proc cf_downloadFile*(client: HttpClient, url: string, filename: string) =
   else:
     raise newException(IOError, "Unable to open file")
 
-
 proc newScrapingClient*(userAgent = defUserAgent, 
       headers = newHttpHeaders()): HttpClient =
 
   result = newHttpClient("Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0", timeout = 10_000, maxRedirects = 0)
   result.headers = headers
+
+template restart* (client: var HttpClient) =
+  try:
+    client.close()
+  except:
+    error("client.end(): Received Exception: "&getCurrentExceptionMsg())
+
+  client = newScrapingClient()
